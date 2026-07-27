@@ -501,6 +501,85 @@ func TestGroupingIsStableAcrossRuns(t *testing.T) {
 	}
 }
 
+func TestGroupByCategoryMergesTypesAndFallsBackWhenUncategorised(t *testing.T) {
+	// A category collapses rooms of different type codes into one group, while
+	// codes that carry no category - "*1B" (wildcard category) and "ROH" - fall
+	// back to their own code rather than piling into one meaningless bucket.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, searchPath, http.StatusOK, `{"data":[{
+	  "hotel": {"hotelId":"RTPAREIF","name":"TEST","cityCode":"PAR"},
+	  "available": true,
+	  "offers": [
+	    {"id":"SUITE_A","checkInDate":"2026-08-10","checkOutDate":"2026-08-13",
+	     "room":{"type":"C3S","typeEstimated":{"category":"SUITE"}},"price":{"currency":"EUR","total":"500.00"},"guests":{"adults":2}},
+	    {"id":"SUITE_B","checkInDate":"2026-08-10","checkOutDate":"2026-08-13",
+	     "room":{"type":"C2T","typeEstimated":{"category":"SUITE"}},"price":{"currency":"EUR","total":"400.00"},"guests":{"adults":2}},
+	    {"id":"WILDCARD","checkInDate":"2026-08-10","checkOutDate":"2026-08-13",
+	     "room":{"type":"*1B"},"price":{"currency":"EUR","total":"300.00"},"guests":{"adults":2}},
+	    {"id":"RUNOFHOUSE","checkInDate":"2026-08-10","checkOutDate":"2026-08-13",
+	     "room":{"type":"ROH"},"price":{"currency":"EUR","total":"350.00"},"guests":{"adults":2}},
+	    {"id":"NOROOM","checkInDate":"2026-08-10","checkOutDate":"2026-08-13",
+	     "room":{},"price":{"currency":"EUR","total":"600.00"},"guests":{"adults":2}}
+	  ]}]}`)
+	service := offers.NewService(server.Client())
+
+	results, err := service.Search(context.Background(), offers.SearchQuery{HotelIDs: []string{"RTPAREIF"}})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	groups := results[0].GroupByCategory()
+
+	// SUITE merges the two type codes; the uncategorised rooms stay apart, and
+	// the room with neither code nor category lands in "OTHER".
+	if len(groups) != 4 {
+		t.Fatalf("got %d category groups, want 4 (SUITE, *1B, ROH, OTHER)", len(groups))
+	}
+
+	byKey := map[string]offers.CategoryGroup{}
+	for _, g := range groups {
+		byKey[g.Category] = g
+	}
+
+	suite, ok := byKey["SUITE"]
+	if !ok {
+		t.Fatal("no SUITE group")
+	}
+	if len(suite.Offers) != 2 {
+		t.Errorf("SUITE has %d offers, want 2 (both type codes merged)", len(suite.Offers))
+	}
+	if suite.Offers[0].ID != "SUITE_B" {
+		t.Errorf("SUITE cheapest = %s, want SUITE_B (400 < 500)", suite.Offers[0].ID)
+	}
+	if suite.Cheapest == nil || suite.Cheapest.ID != suite.Offers[0].ID {
+		t.Error("SUITE Cheapest is not Offers[0]")
+	}
+
+	for _, key := range []string{"*1B", "ROH", "OTHER"} {
+		if _, ok := byKey[key]; !ok {
+			t.Errorf("uncategorised room should fall back to a %q group", key)
+		}
+	}
+
+	// Nothing is lost.
+	counted := 0
+	for _, g := range groups {
+		counted += len(g.Offers)
+	}
+	if counted != len(results[0].Offers) {
+		t.Errorf("grouping produced %d offers from %d", counted, len(results[0].Offers))
+	}
+
+	// Groups are ordered cheapest first: *1B(300), ROH(350), SUITE(400), OTHER(600).
+	for i := 1; i < len(groups); i++ {
+		if cmp, err := groups[i-1].PriceFrom.Compare(groups[i].PriceFrom); err == nil && cmp > 0 {
+			t.Errorf("group %q (%s) sorts before %q (%s)",
+				groups[i-1].Category, groups[i-1].PriceFrom,
+				groups[i].Category, groups[i].PriceFrom)
+		}
+	}
+}
+
 func TestSoldOutHotelIsReturnedWithoutOffers(t *testing.T) {
 	server := amadeustest.New(t)
 	server.JSON(http.MethodGet, searchPath, http.StatusOK,
