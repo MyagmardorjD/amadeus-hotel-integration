@@ -580,6 +580,50 @@ func TestGroupByCategoryMergesTypesAndFallsBackWhenUncategorised(t *testing.T) {
 	}
 }
 
+func TestGroupingOrdersMixedCurrenciesByConvertedValue(t *testing.T) {
+	// A hotel can quote offers for one room in more than one currency. Comparing
+	// the raw amounts is meaningless - 270.60 HKD is cheaper than 396.00 CNY, but
+	// neither the numbers nor the currencies say so on their own. The response's
+	// conversion rates settle it: converted to MNT the HKD offer is the cheaper,
+	// and grouping must order by that, not fall back to the offer-ID tie-break.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, searchPath, http.StatusOK, `{"data":[{
+	  "hotel": {"hotelId":"RTHKGNTH","name":"TEST","cityCode":"HKG"},
+	  "available": true,
+	  "offers": [
+	    {"id":"AAA_CNY","checkInDate":"2026-08-01","checkOutDate":"2026-08-04",
+	     "room":{"type":"C1D","typeEstimated":{"category":"STANDARD_ROOM"}},
+	     "price":{"currency":"CNY","total":"396.00"},"guests":{"adults":2}},
+	    {"id":"BBB_HKD","checkInDate":"2026-08-01","checkOutDate":"2026-08-04",
+	     "room":{"type":"C1D","typeEstimated":{"category":"STANDARD_ROOM"}},
+	     "price":{"currency":"HKD","total":"270.60"},"guests":{"adults":2}}
+	  ]}],
+	  "dictionaries":{"currencyConversionLookupRates":{
+	    "CNY":{"rate":"500","target":"MNT","targetDecimalPlaces":0},
+	    "HKD":{"rate":"450","target":"MNT","targetDecimalPlaces":0}}}}`)
+
+	results, err := offers.NewService(server.Client()).Search(context.Background(),
+		offers.SearchQuery{HotelIDs: []string{"RTHKGNTH"}, Currency: "MNT"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	// 396.00 CNY -> 198,000 MNT; 270.60 HKD -> 121,770 MNT. The HKD offer wins.
+	group := results[0].GroupByCategory()[0]
+	if group.Category != "STANDARD_ROOM" {
+		t.Fatalf("group category = %q, want STANDARD_ROOM", group.Category)
+	}
+	if group.Offers[0].ID != "BBB_HKD" {
+		t.Errorf("cheapest = %s, want BBB_HKD (121,770 < 198,000 MNT)", group.Offers[0].ID)
+	}
+	if group.Cheapest == nil || group.Cheapest.ID != "BBB_HKD" {
+		t.Errorf("Cheapest = %v, want BBB_HKD", group.Cheapest)
+	}
+	if cheapest, ok := results[0].Cheapest(); !ok || cheapest.ID != "BBB_HKD" {
+		t.Errorf("Cheapest() = %v (ok=%v), want BBB_HKD", cheapest.ID, ok)
+	}
+}
+
 func TestSoldOutHotelIsReturnedWithoutOffers(t *testing.T) {
 	server := amadeustest.New(t)
 	server.JSON(http.MethodGet, searchPath, http.StatusOK,

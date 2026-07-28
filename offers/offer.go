@@ -112,6 +112,10 @@ func (d DisplayMoney) Currency() money.Currency { return d.Amount.Currency() }
 
 // Cheapest returns the lowest-priced offer, and false when the hotel has none.
 // Offers with an unparseable price are skipped rather than winning by default.
+//
+// Prices are compared in the response's target currency, so a hotel quoting one
+// room in several currencies still yields the genuinely cheapest offer rather
+// than the first one seen. See ConversionRates.comparePrices.
 func (h HotelOffers) Cheapest() (Offer, bool) {
 	var best Offer
 	found := false
@@ -124,7 +128,7 @@ func (h HotelOffers) Cheapest() (Offer, bool) {
 			best, found = offer, true
 			continue
 		}
-		if cmp, err := offer.Price.Total.Compare(best.Price.Total); err == nil && cmp < 0 {
+		if h.Rates.comparePrices(offer.Price.Total, best.Price.Total) < 0 {
 			best = offer
 		}
 	}

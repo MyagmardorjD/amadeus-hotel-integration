@@ -103,7 +103,7 @@ func (h HotelOffers) groupBy(keyOf func(Room) string) []keyedGroup {
 	for _, key := range order {
 		offers := byKey[key]
 		sort.SliceStable(offers, func(i, j int) bool {
-			if cmp := comparePrices(offers[i].Price.Total, offers[j].Price.Total); cmp != 0 {
+			if cmp := h.Rates.comparePrices(offers[i].Price.Total, offers[j].Price.Total); cmp != 0 {
 				return cmp < 0
 			}
 			return offers[i].ID < offers[j].ID
@@ -119,7 +119,7 @@ func (h HotelOffers) groupBy(keyOf func(Room) string) []keyedGroup {
 	}
 
 	sort.SliceStable(groups, func(i, j int) bool {
-		if cmp := comparePrices(groups[i].priceFrom, groups[j].priceFrom); cmp != 0 {
+		if cmp := h.Rates.comparePrices(groups[i].priceFrom, groups[j].priceFrom); cmp != 0 {
 			return cmp < 0
 		}
 		return groups[i].key < groups[j].key
@@ -225,13 +225,36 @@ func categoryKey(r Room) string {
 	}
 }
 
+// comparePrices orders two prices after converting both into the response's
+// target currency, so amounts a hotel quoted in different currencies still order
+// correctly. Without this, a room offered at 270.60 HKD and 396.00 CNY has no
+// orderable prices and the offer-ID tie-break decides which reads as cheapest,
+// which is how a guest is shown the dearer rate as the "from" price.
+//
+// Conversion is comparison-only. It preserves the missing-price-sorts-last rule
+// of the package comparePrices: a zero amount stays zero through
+// ConvertOrOriginal, and an amount with no rate is left in its own currency, so
+// the rare case of one convertible and one not falls back to the same
+// compare-equal-then-tie-break behaviour as before.
+func (rates ConversionRates) comparePrices(a, b money.Money) int {
+	return comparePrices(rates.convertForCompare(a), rates.convertForCompare(b))
+}
+
+// convertForCompare returns m in the response's target currency, or m unchanged
+// when no rate covers it. It is for ordering only and is never shown to a guest.
+func (rates ConversionRates) convertForCompare(m money.Money) money.Money {
+	converted, _ := rates.ConvertOrOriginal(m)
+	return converted
+}
+
 // comparePrices orders two prices, sorting a missing price last so it never
 // displaces a genuine cheapest offer.
 //
 // Prices in different currencies cannot be ordered; those compare equal, which
 // leaves the ID tie-breaker to produce a stable result rather than an arbitrary
-// one. A single Amadeus response quotes one currency per hotel, so this is the
-// degenerate case rather than the common one.
+// one. Callers with the response's conversion rates should prefer the
+// ConversionRates.comparePrices method, which converts to a common currency
+// first; this remains for prices already known to share one.
 func comparePrices(a, b money.Money) int {
 	aMissing, bMissing := a.Amount().IsZero(), b.Amount().IsZero()
 	switch {
