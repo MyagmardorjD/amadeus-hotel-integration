@@ -17,8 +17,11 @@ const (
 	MaxAdults = 9
 	// MaxRooms is the most rooms Amadeus prices in one request.
 	MaxRooms = 9
-	// MaxHotelIDs is the most property codes accepted in one search.
-	MaxHotelIDs = 100
+	// MaxHotelIDs is the most property codes accepted in one search. The cap is
+	// exactly 50: 50 is accepted, 51 is rejected with "477 INVALID FORMAT -
+	// Exceeding max items for: hotelIds". It is lower than the 100 the
+	// by-hotels inventory lookup takes, so the two are not interchangeable.
+	MaxHotelIDs = 50
 	// MaxChildAge is the oldest a guest can be and still be priced as a child.
 	MaxChildAge = 17
 )

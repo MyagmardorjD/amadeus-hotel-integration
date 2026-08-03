@@ -151,7 +151,7 @@ func main() {
     // 2. What do they cost for three nights in August?
     checkIn := datetime.MustParseDate("2026-08-10")
     results, err := client.Offers.Search(ctx, offers.SearchQuery{
-        HotelIDs: inventory.IDs(hotels)[:20], // at most 100 per search
+        HotelIDs: inventory.IDs(hotels)[:20], // at most 50 per search
         Stay:     offers.Stay{CheckIn: checkIn, CheckOut: checkIn.AddDays(3)},
         Guests:   offers.Guests{Adults: 2},
     })

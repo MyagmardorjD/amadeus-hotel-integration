@@ -3,6 +3,7 @@ package offers_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -724,6 +725,35 @@ func TestUndocumentedRateCodesAreAccepted(t *testing.T) {
 	}
 }
 
+// hotelIDs builds n distinct 8-character property codes.
+func hotelIDs(n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("RTPAR%03d", i)
+	}
+	return ids
+}
+
+// TestMaxHotelIDsIsFifty pins the boundary rather than the constant. Amadeus
+// accepts 50 hotel IDs and rejects 51 with "477 INVALID FORMAT - Exceeding max
+// items for: hotelIds"; the constant was 100 for a while, which let 51-100
+// through validation and turned a named error into that opaque 400.
+func TestMaxHotelIDsIsFifty(t *testing.T) {
+	if offers.MaxHotelIDs != 50 {
+		t.Errorf("MaxHotelIDs = %d, want 50: Amadeus rejects the 51st ID",
+			offers.MaxHotelIDs)
+	}
+
+	service, server := newService(t)
+	query := offers.SearchQuery{HotelIDs: hotelIDs(offers.MaxHotelIDs)}
+	if _, err := service.Search(context.Background(), query); err != nil {
+		t.Errorf("%d IDs should pass validation: %v", offers.MaxHotelIDs, err)
+	}
+	if len(server.Requests()) == 0 {
+		t.Error("a search at the limit never reached the network")
+	}
+}
+
 func TestSearchValidation(t *testing.T) {
 	service, server := newService(t)
 
@@ -763,6 +793,9 @@ func TestSearchValidation(t *testing.T) {
 		{"malformed rate code", offers.SearchQuery{
 			HotelIDs:  []string{"RTPAREIF"},
 			RateCodes: []codes.RateCode{"TOOLONG"},
+		}},
+		{"one hotel ID too many", offers.SearchQuery{
+			HotelIDs: hotelIDs(offers.MaxHotelIDs + 1),
 		}},
 	}
 
