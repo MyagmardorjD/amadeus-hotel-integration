@@ -350,8 +350,19 @@ type Room struct {
 
 	// Amenities are the room's own amenities.
 	Amenities []Amenity
-	// Media are photographs of the room.
+	// Media are photographs of the room. Prose-only entries are filtered out
+	// into Descriptions, so everything here carries an actual image, exactly
+	// as on Hotel.Media.
+	//
+	// Many properties publish no room photography at all: Amadeus attaches it
+	// to the property instead, or to a nameless room entry, so a named
+	// bookable room routinely has none. Fall back to Hotel.Media when this is
+	// empty.
 	Media []media.Asset
+	// Descriptions holds the prose blocks that shared the room's media array,
+	// with Type set to Amadeus's tag - DEFAULT_ROOM_NAME,
+	// STANDARD_ROOM_CATEGORY and others.
+	Descriptions []media.Text
 	// PolicyDescriptions are room-specific rules.
 	PolicyDescriptions []string
 	// ProviderReference links to the content provider's record.

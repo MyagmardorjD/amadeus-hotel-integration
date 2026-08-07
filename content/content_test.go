@@ -465,3 +465,51 @@ func TestNotFoundSurfacesTyped(t *testing.T) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestRoomMediaSeparatesPhotographsFromProse(t *testing.T) {
+	// Amadeus overloads a room's media array: most entries are photographs,
+	// but some are prose blocks with no image at all - a room's default name
+	// or category description. Leaving them in Media hands a caller a
+	// non-empty slice of assets that render nothing, which reads as "the
+	// images are missing" when the real answer is that they were never images.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, contentPath, http.StatusOK, `{"data":{
+	  "basic":{"hotelId":"RTPAR666","name":"TEST"},
+	  "rooms":[{
+	    "name":{"text":"Studio for 2 people"},
+	    "media":[
+	      {"tags":["DEFAULT_ROOM_NAME"],
+	       "description":{"text":"Lounge with twin beds, kitchen.","lang":"en"}},
+	      {"id":"IMG1","category":"GUEST_ROOM",
+	       "mediaScales":[{"href":"https://example.test/room.jpg",
+	                       "dimensions":{"height":600,"width":800}}]}
+	    ]}]}}`)
+
+	hotel, err := content.NewService(server.Client()).Get(
+		context.Background(), content.Query{HotelID: "RTPAR666"})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(hotel.Rooms) != 1 {
+		t.Fatalf("got %d rooms", len(hotel.Rooms))
+	}
+	room := hotel.Rooms[0]
+
+	if len(room.Media) != 1 {
+		t.Fatalf("Media = %d entries, want 1 (the photograph only)", len(room.Media))
+	}
+	if !room.Media[0].IsVisual() {
+		t.Error("the entry left in Media carries no image")
+	}
+	if len(room.Descriptions) != 1 {
+		t.Fatalf("Descriptions = %d entries, want 1 (the prose block)", len(room.Descriptions))
+	}
+	if got := room.Descriptions[0].Value; got != "Lounge with twin beds, kitchen." {
+		t.Errorf("Descriptions[0].Value = %q", got)
+	}
+	// The tag is where Amadeus records what the prose is about, as it does for
+	// the property's own description blocks.
+	if got := room.Descriptions[0].Type; got != "DEFAULT_ROOM_NAME" {
+		t.Errorf("Descriptions[0].Type = %q, want DEFAULT_ROOM_NAME", got)
+	}
+}

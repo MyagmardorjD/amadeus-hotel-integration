@@ -337,9 +337,12 @@ func mapRooms(wire []contentdto.RoomResponse) []Room {
 			IsNonSmoking:       r.IsNonSmoking,
 			StandardOccupancy:  r.StandardPersonCapacity,
 			Amenities:          mapAmenities(r.Amenities),
-			Media:              mapping.MediaAssets(r.Media),
 			PolicyDescriptions: r.PolicyDescriptions,
 		}
+
+		// A room's media array carries prose blocks beside its photographs,
+		// exactly as the property's does, so it is split the same way.
+		out[i].Media, out[i].Descriptions = splitMedia(r.Media)
 
 		// The wire sends dimensions as an embedded struct rather than a
 		// pointer, so taking its address unconditionally would hand callers a
