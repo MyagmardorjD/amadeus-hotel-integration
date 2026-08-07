@@ -939,3 +939,45 @@ func indexOf(haystack, needle string) int {
 	}
 	return -1
 }
+
+func TestRoomProviderReferenceIsMapped(t *testing.T) {
+	// Amadeus sends a provider reference inside roomInformation as well as on
+	// the offer, and they are different records. It appears in live responses
+	// but in none of the captured fixtures, so this test serves its own body.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, searchPath, http.StatusOK, `{"data":[{
+		"type":"hotel-offers",
+		"hotel":{"hotelId":"RTPAR666","name":"Aparthotel"},
+		"available":true,
+		"offers":[{
+			"id":"OFFER1",
+			"price":{"currency":"EUR","total":"900.00"},
+			"roomInformation":{
+				"description":"Deluxe Queen Room",
+				"type":"PNA",
+				"providerContentReference":{"id":"GENR"}
+			}
+		}]
+	}]}`)
+
+	results, err := offers.NewService(server.Client()).Search(
+		context.Background(), offers.SearchQuery{HotelIDs: []string{"RTPAR666"}})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	room := results[0].Offers[0].RoomDetails
+	if room == nil {
+		t.Fatal("RoomDetails was not mapped at all")
+	}
+	if room.ProviderReference == nil {
+		t.Fatal("the room's provider reference was dropped")
+	}
+	if room.ProviderReference.ID != "GENR" {
+		t.Errorf("ProviderReference.ID = %q, want %q", room.ProviderReference.ID, "GENR")
+	}
+	// The offer-level reference is absent here and must not be confused with it.
+	if results[0].Offers[0].ProviderReference != nil {
+		t.Error("an offer-level provider reference was invented")
+	}
+}

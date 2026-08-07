@@ -321,6 +321,10 @@ type RoomDetails struct {
 	Amenities          []RoomAmenity
 	Media              []media.Asset
 	PolicyDescriptions []media.Text
+
+	// ProviderReference links this room to the content provider's own record.
+	// It is the room's own reference, distinct from Offer.ProviderReference.
+	ProviderReference *ProviderReference
 }
 
 // StandardizedRoom is Amadeus's normalised room description, comparable across

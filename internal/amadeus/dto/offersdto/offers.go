@@ -454,18 +454,21 @@ type (
 		HotelRoomCategory string `json:"hotelRoomCategory,omitempty"`
 		// Room classification. Enum includes ROOM, VILLA, APARTMENTS, SUITES,
 		// STUDIOS, etc.
-		HotelRoomClassification string                                `json:"hotelRoomClassification,omitempty"`
-		HotelRoomLocation       string                                `json:"hotelRoomLocation,omitempty"`
-		ID                      string                                `json:"id,omitempty"`
-		MaxPersonCapacity       *dto.MaxPersonCapacityResponse        `json:"maxPersonCapacity,omitempty"`
-		MaxSleepFurnishings     *dto.MaxSleepFurnishingsResponse      `json:"maxSleepFurnishings,omitempty"`
-		Media                   []dto.MediaResponse                   `json:"media,omitempty"`
-		Name                    *dto.TextContentResponse              `json:"name,omitempty"`
-		PolicyDescriptions      []dto.DescriptionResponse             `json:"policyDescriptions,omitempty"`
-		Quantity                int                                   `json:"quantity,omitempty"`
-		SortOrder               int                                   `json:"sortOrder,omitempty"`
-		Type                    string                                `json:"type,omitempty"`
-		TypeEstimated           *RoomInformationTypeEstimatedResponse `json:"typeEstimated,omitempty"`
+		HotelRoomClassification string                           `json:"hotelRoomClassification,omitempty"`
+		HotelRoomLocation       string                           `json:"hotelRoomLocation,omitempty"`
+		ID                      string                           `json:"id,omitempty"`
+		MaxPersonCapacity       *dto.MaxPersonCapacityResponse   `json:"maxPersonCapacity,omitempty"`
+		MaxSleepFurnishings     *dto.MaxSleepFurnishingsResponse `json:"maxSleepFurnishings,omitempty"`
+		Media                   []dto.MediaResponse              `json:"media,omitempty"`
+		Name                    *dto.TextContentResponse         `json:"name,omitempty"`
+		PolicyDescriptions      []dto.DescriptionResponse        `json:"policyDescriptions,omitempty"`
+		// Reference to the content provider's own record for this room, which
+		// is a different reference from the offer-level one.
+		ProviderContentReference *ProviderContentReferenceResponse     `json:"providerContentReference,omitempty"`
+		Quantity                 int                                   `json:"quantity,omitempty"`
+		SortOrder                int                                   `json:"sortOrder,omitempty"`
+		Type                     string                                `json:"type,omitempty"`
+		TypeEstimated            *RoomInformationTypeEstimatedResponse `json:"typeEstimated,omitempty"`
 		// View code. Enum includes CITY, OCEAN, POOL, MOUNTAIN, GARDEN, SEA, etc.
 		ViewCode string `json:"viewCode,omitempty"`
 	}

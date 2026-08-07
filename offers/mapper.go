@@ -519,6 +519,13 @@ func mapRoomDetails(r offersdto.RoomInformationResponse, currency string) *RoomD
 		Media:            mapMediaAssets(r.Media),
 	}
 
+	if r.ProviderContentReference != nil {
+		details.ProviderReference = &ProviderReference{
+			ID:  r.ProviderContentReference.ID,
+			Ref: r.ProviderContentReference.Ref,
+		}
+	}
+
 	// The estimated block is the fallback for the flat fields, which some
 	// sources leave empty.
 	if r.TypeEstimated != nil {
