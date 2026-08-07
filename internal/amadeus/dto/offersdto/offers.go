@@ -24,47 +24,11 @@ type (
 		Self      string          `json:"self"`
 	}
 
-	// HotelOffersResponse is the top-level GET /shopping/hotel-offers 200
-	// response wrapper containing the data array plus meta/dictionaries/warnings.
-	HotelOffersResponse struct {
-		Data         []OffersResponse      `json:"data"`
-		Meta         *MetaResponse         `json:"meta,omitempty"`
-		Dictionaries *DictionariesResponse `json:"dictionaries,omitempty"`
-		Warnings     []WarningResponse     `json:"warnings,omitempty"`
-	}
-
-	// MetaResponse holds response-level metadata.
-	MetaResponse struct {
-		Links *MetaLinksResponse `json:"links,omitempty"`
-	}
-
-	// MetaLinksResponse holds pagination links.
-	MetaLinksResponse struct {
-		// URL to the next page of results.
-		Next string `json:"next,omitempty"`
-	}
-
-	// DictionariesResponse holds lookup dictionaries referenced by the response.
-	DictionariesResponse struct {
-		CurrencyConversionLookupRates map[string]CurrencyConversionRateResponse `json:"currencyConversionLookupRates,omitempty"`
-	}
-
-	// CurrencyConversionRateResponse describes a currency conversion lookup rate.
-	CurrencyConversionRateResponse struct {
-		Rate                string `json:"rate,omitempty"`
-		Target              string `json:"target,omitempty"`
-		TargetDecimalPlaces int    `json:"targetDecimalPlaces,omitempty"`
-	}
-
-	// WarningResponse models a non-blocking warning returned with the response.
-	WarningResponse struct {
-		Code          int                         `json:"code,omitempty"`
-		Title         string                      `json:"title,omitempty"`
-		Detail        string                      `json:"detail,omitempty"`
-		Source        *dto.WarningSourceResponse  `json:"source,omitempty"`
-		Documentation string                      `json:"documentation,omitempty"`
-		Sources       []dto.WarningSourceResponse `json:"sources,omitempty"`
-	}
+	// The envelope around this data - the data array itself, meta, warnings and
+	// the currency dictionaries - is not modelled here. amadeus.Envelope owns
+	// it, generically, for every endpoint. This package once carried its own
+	// copy of all four; nothing ever decoded into it, and a second definition
+	// of a shape only one of them is used for is a shape free to drift.
 
 	HotelResponse struct {
 		Type      string `json:"type"`
@@ -534,10 +498,5 @@ type (
 	StandardizedViewResponse struct {
 		Code        string `json:"code,omitempty"`
 		Description string `json:"description,omitempty"`
-	}
-
-	DetailResponse struct {
-		Message    string            `json:"message"`
-		Parameters map[string]string `json:"parameters"`
 	}
 )
