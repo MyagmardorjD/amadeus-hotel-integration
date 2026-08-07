@@ -278,7 +278,7 @@ func (c *Client) attempt(ctx context.Context, req Request) (int, []byte, error) 
 		return 0, nil, fmt.Errorf("amadeus: reading %s %s: %w", req.method(), req.Path, err)
 	}
 
-	c.logResponse(ctx, httpReq.Method, httpReq.URL.String(), res.StatusCode, started, body)
+	c.logResponse(ctx, httpReq.Method, httpReq.URL.String(), req.Path, res.StatusCode, started, body)
 	return res.StatusCode, body, nil
 }
 

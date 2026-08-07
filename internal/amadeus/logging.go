@@ -17,8 +17,10 @@ import (
 // an error message. So request bodies are redacted before they are logged, and
 // the auth exchange logs neither its body nor its token.
 //
-// Response bodies are logged as received: Amadeus returns card numbers already
-// masked, and the raw response is the thing worth seeing.
+// Response bodies are logged for the two cases that justify the volume and the
+// exposure - a failure, and a booking - and omitted otherwise. See
+// shouldLogResponseBody. When one is logged it is logged as received, since
+// Amadeus returns card numbers already masked and the raw payload is the point.
 //
 // Everything logs at Debug. Traffic logging is verbose and off unless the
 // caller's handler is set to emit Debug, and the redaction cost is skipped
@@ -57,21 +59,59 @@ func (c *Client) logRequest(ctx context.Context, method, url string, body any) {
 	c.logger.LogAttrs(ctx, slog.LevelDebug, "amadeus request", attrs...)
 }
 
-// logResponse records a completed response. The body is logged as received;
-// Amadeus masks card numbers in responses, and the raw payload is the point.
-func (c *Client) logResponse(ctx context.Context, method, url string, status int, started time.Time, body []byte) {
+// logResponse records a completed response. Every response logs its method,
+// URL, status, timing and size; the body is included only when
+// shouldLogResponseBody says it earns its place, and is logged as received when
+// it is.
+func (c *Client) logResponse(ctx context.Context, method, url, path string, status int, started time.Time, body []byte) {
 	if !c.logger.Enabled(ctx, slog.LevelDebug) {
 		return
 	}
 
-	c.logger.LogAttrs(ctx, slog.LevelDebug, "amadeus response",
+	attrs := []slog.Attr{
 		slog.String("method", method),
 		slog.String("url", url),
 		slog.Int("status", status),
 		slog.Duration("elapsed", time.Since(started)),
 		slog.Int("bytes", len(body)),
-		slog.String("body", string(body)),
-	)
+	}
+	if shouldLogResponseBody(path, status, body) {
+		attrs = append(attrs, slog.String("body", string(body)))
+	}
+	c.logger.LogAttrs(ctx, slog.LevelDebug, "amadeus response", attrs...)
+}
+
+// bookingPathPrefix identifies the Hotel Booking endpoints.
+//
+// It is spelled out here rather than imported from the booking package, because
+// booking imports this package and the dependency cannot run both ways. The
+// transport already knows these endpoints are special: amadeusContentType exists
+// for the same reason.
+const bookingPathPrefix = "/v2/booking/"
+
+// shouldLogResponseBody reports whether a response body belongs in the log.
+//
+// Logging every body is more than it is worth. One hotel search runs to
+// hundreds of kilobytes, and a booking response carries guest names, email
+// addresses and phone numbers, so a log shipped to a third party becomes a
+// disclosure. Two cases repay both costs:
+//
+//   - A failure, whether a non-2xx or one of the 200s Amadeus sends carrying an
+//     errors array. The body is the only account of what it objected to, and
+//     without it a support ticket has nothing to go on.
+//   - A booking call. It took money, so the exact response is the audit trail
+//     for the reservation, and is worth keeping even when it succeeded.
+//
+// Everything else logs method, status, timing and size, which is enough to see
+// that a call happened, that it worked, and how long it took.
+func shouldLogResponseBody(path string, status int, body []byte) bool {
+	if status < 200 || status > 299 {
+		return true
+	}
+	if len(parseDetails(body)) > 0 {
+		return true
+	}
+	return strings.HasPrefix(path, bookingPathPrefix)
 }
 
 // redactBody marshals a request body and blanks its sensitive fields.

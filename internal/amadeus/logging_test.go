@@ -38,12 +38,112 @@ func TestRequestAndResponseAreLogged(t *testing.T) {
 	if !strings.Contains(logged, "amadeus response") {
 		t.Error("the response was not logged")
 	}
-	// The raw response body is the point of the feature.
-	if !strings.Contains(logged, "Marriott") {
-		t.Error("the response body was not logged")
-	}
 	if !strings.Contains(logged, "/v3/hotels") {
 		t.Error("the request URL was not logged")
+	}
+	// A successful search logs that the call happened and how big it was, but
+	// not the payload: those run to hundreds of kilobytes and carry guest data.
+	if strings.Contains(logged, "Marriott") {
+		t.Error("a successful non-booking response body was logged")
+	}
+	if !strings.Contains(logged, `"status":200`) || !strings.Contains(logged, `"bytes":`) {
+		t.Errorf("the response metadata was not logged: %s", logged)
+	}
+}
+
+func TestFailedResponseBodyIsLogged(t *testing.T) {
+	// A failure is the case the log exists for: the body is the only account of
+	// what Amadeus objected to.
+	var buf bytes.Buffer
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 400, `{"errors":[{"code":477,"title":"INVALID FORMAT"}]}`)
+	})
+
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: debugLogger(&buf),
+	})
+
+	if _, err := Do[payload](context.Background(), client, Request{Path: "/v3/hotels"}); err == nil {
+		t.Fatal("Do: expected an error for a 400")
+	}
+
+	if !strings.Contains(buf.String(), "INVALID FORMAT") {
+		t.Errorf("the failure body was not logged: %s", buf.String())
+	}
+}
+
+func TestTwoHundredCarryingErrorsIsLoggedInFull(t *testing.T) {
+	// Amadeus reports some failures as 200 with an errors array, which send()
+	// turns into an error. Those bodies are failures and must be logged too.
+	var buf bytes.Buffer
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, `{"errors":[{"code":1257,"title":"NO ROOMS AVAILABLE"}]}`)
+	})
+
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: debugLogger(&buf),
+	})
+
+	if _, err := Do[payload](context.Background(), client, Request{Path: "/v3/hotels"}); err == nil {
+		t.Fatal("Do: expected an error for a 200 carrying errors")
+	}
+
+	if !strings.Contains(buf.String(), "NO ROOMS AVAILABLE") {
+		t.Errorf("a 200 carrying errors was not logged in full: %s", buf.String())
+	}
+}
+
+func TestBookingResponseBodyIsLogged(t *testing.T) {
+	// A booking took money. Its exact response is the audit trail, so it is
+	// logged in full even on success.
+	var buf bytes.Buffer
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 201, `{"data":{"id":"ORDER1","name":"CONFIRMED"}}`)
+	})
+
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: debugLogger(&buf),
+	})
+
+	_, err := Do[payload](context.Background(), client, Request{
+		Method: http.MethodPost, Path: "/v2/booking/hotel-orders", AmadeusJSON: true,
+	})
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "ORDER1") {
+		t.Errorf("the booking response body was not logged: %s", buf.String())
+	}
+}
+
+func TestRetrievingAnOrderLogsItsBody(t *testing.T) {
+	// Every /v2/booking/ path counts, not just the POST that creates an order.
+	var buf bytes.Buffer
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, `{"data":{"id":"ORDER1","name":"CONFIRMED"}}`)
+	})
+
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: debugLogger(&buf),
+	})
+
+	if _, err := Do[payload](context.Background(), client, Request{
+		Path: "/v2/booking/hotel-orders/ORDER1",
+	}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "ORDER1") {
+		t.Errorf("an order retrieval was not logged in full: %s", buf.String())
 	}
 }
 

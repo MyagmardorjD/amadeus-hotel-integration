@@ -750,12 +750,22 @@ client, _ := sdk.New(sdk.Config{
 
 ```json
 {"level":"DEBUG","msg":"amadeus request","method":"GET","url":".../hotels/by-city?cityCode=PAR"}
-{"level":"DEBUG","msg":"amadeus response","method":"GET","url":"...","status":200,"elapsed":"1.06s","bytes":14063,"body":"{\"data\":[...]}"}
+{"level":"DEBUG","msg":"amadeus response","method":"GET","url":"...","status":200,"elapsed":"1.06s","bytes":14063}
 ```
 
-It logs the method, URL, status, timing and body of each call. Leave your
+It logs the method, URL, status, timing and size of each call. Leave your
 handler at `Info` or higher and nothing is logged — and nothing is spent
 formatting it, because the work is skipped when `Debug` is disabled.
+
+**Response bodies are logged only where they earn their place**, because one
+search runs to hundreds of kilobytes and a reservation carries guest names,
+emails and phone numbers:
+
+| Call | Body logged |
+|---|---|
+| Any failure — a non-2xx, or one of the 200s Amadeus sends carrying an `errors` array | **Yes.** It is the only account of what Amadeus objected to |
+| Anything under `/v2/booking/` — create, retrieve, modify, cancel | **Yes.** A booking took money, so its response is the audit trail |
+| A successful search, content or inventory call | No — method, status, timing and `bytes` only |
 
 **Sensitive data is redacted, not logged.** This is the same guarantee the
 booking validation makes about error messages, extended to the log:
@@ -766,8 +776,9 @@ booking validation makes about error messages, extended to the log:
 - **The authentication exchange logs no body at all** — its request carries the
   client secret and its response carries the access token, so it logs status
   only.
-- **Response bodies are logged as received**, where Amadeus has already masked
-  card numbers.
+- **A logged booking response is emitted as received**, where Amadeus has
+  already masked card numbers. It still contains guest contact details, so
+  treat the log as personal data.
 
 ---
 

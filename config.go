@@ -85,15 +85,19 @@ type Config struct {
 
 	// Logger, when set, receives every request and response at Debug level.
 	//
-	// It logs the method, URL, status, timing and body of each call. Set your
+	// It logs the method, URL, status, timing and size of each call. Set your
 	// handler to emit Debug to see it; leave the handler at Info or higher and
 	// nothing is logged and nothing is spent formatting it.
+	//
+	// Response bodies are logged only when they earn it: on a failure, and on
+	// the booking endpoints. A successful search logs its metadata but not its
+	// payload, which keeps a hundred-kilobyte result set and the guest data in
+	// a reservation out of the log.
 	//
 	// Request bodies are redacted before logging: the card number, security
 	// code and 3DS cryptogram a booking carries are replaced with a
 	// placeholder, and the authentication exchange logs no body at all, so its
-	// client secret and access token never reach the log. Response bodies are
-	// logged as received, where Amadeus has already masked card numbers.
+	// client secret and access token never reach the log.
 	//
 	//	sdk.New(sdk.Config{
 	//	    ClientID:     id,
