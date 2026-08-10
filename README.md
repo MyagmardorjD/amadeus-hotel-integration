@@ -70,6 +70,13 @@ types. They are drawn on the seams the business has, not on Amadeus's URLs.
 | **Offers** | `offers` | What does a stay cost? | Hotel Search v3.5 |
 | **Booking** | `booking` | Reserve it, and manage the reservation | Hotel Booking v2.x |
 
+These four are the whole of the Amadeus Hotels Quick-Connect surface. In
+particular **there is no guest-review or rating API**: the only "rating" Amadeus
+exposes is the property's **star** rating, as a filter on Hotel List and a field
+on content. Review text and scores come from a separate provider. (Amadeus does
+publish a Hotel Ratings sentiment API, but it lives on the *self-service*
+gateway, not the Enterprise one this SDK targets.)
+
 ```
         codes/  money/  geo/  datetime/  media/     <- shared value objects
               ^     ^     ^       ^        ^
@@ -252,8 +259,8 @@ results, err := client.Offers.Search(ctx, offers.SearchQuery{
 offer := results[0].Offers[0]
 
 offer.Price.Payable()      // ← the price to charge the guest. Use this.
-offer.Price.Total          // money.Money — "600 EUR" (Base + taxes)
-offer.Price.Base           // before taxes
+offer.Price.Total          // money.Money — "600 EUR", taxes included
+offer.Price.Base           // room rate before non-included taxes; OFTEN ZERO
 offer.Price.SellingTotal   // Total + agency markup; ZERO unless a markup applies
 
 // Taxes carry their own semantics
@@ -267,6 +274,30 @@ perNight, remainder, ok := offer.Price.PerNight(offer.Stay.Nights())
 `PayableAtProperty` is frequently non-zero. Showing a guest only the booking
 total understates what they will actually pay.
 
+**How the amounts relate.** Amadeus documents only `total = base + totalTaxes`,
+and never defines `base` itself. Measured across 277 live Enterprise offers, the
+exact relationship is:
+
+```
+Total = Base + Σ(taxes where Included == false)
+```
+
+`Tax.Included` means the tax is **already inside `Base`**. That is what
+`TaxesTotal()` sums — only the lines *not* already counted — so it equals
+`Total - Base` precisely. It held on all 91 offers that carried both a base and
+tax lines.
+
+> **`Base` is absent on roughly a fifth of offers** (61 of 277 measured), and
+> the two never appear together with itemised taxes on the same offer. So
+> `Base + TaxesTotal()` does **not** reliably reconstruct `Total`, and a UI that
+> prints `Base` will show `0` for many rates. Guard it:
+>
+> ```go
+> if !offer.Price.Base.Amount().IsZero() {
+>     // safe to show a base/tax split
+> }
+> ```
+
 > **Which figure do I charge?** `offer.Price.Payable()`. It returns
 > `SellingTotal` when a travel-agency markup applies and `Total` otherwise — and
 > `Total` already includes taxes. **Do not display `SellingTotal` directly:**
@@ -274,6 +305,40 @@ total understates what they will actually pay.
 > self-service and GDS rate), so reaching for the customer-sounding field shows
 > the guest a price of **0**. `Payable()` picks the right one; `HasMarkup()`
 > tells you whether a markup was applied.
+
+### What the search filters actually do
+
+Measured against the live Enterprise sandbox, because several behave differently
+from how they read.
+
+| Filter | Behaviour |
+|---|---|
+| `BoardType` | Filters strictly. `ROOM_ONLY` returns only room-only offers |
+| `PaymentPolicy` | Filters strictly. `GUARANTEE` returns only guarantee offers |
+| `BestRateOnly` | Works. `true` returns one lead offer per hotel |
+| `PriceRange` | **Per night, in the hotel's own currency — and not a guarantee.** See below |
+| `RateCodes` | No observable effect in the sandbox; `RAC`, `PRO` and `COR` returned identical result sets |
+| `Currency` | **Not a filter and does not convert prices.** See [Currency conversion](#currency-conversion) |
+
+> **`PriceRange` does not bound the offers you get back.** It is applied per
+> night, against the hotel's own currency rather than the one you requested, and
+> it selects *hotels* rather than offers — a property whose lead rate qualifies
+> returns all of its offers, including ones far outside the range. In one
+> measured search, `priceRange=1-200` returned a hotel whose seventeen offers ran
+> 474–535 per night, and the same hotel came back for `200-400` too.
+>
+> Treat it as a hint that narrows candidates, and filter client-side if you need
+> real bounds:
+>
+> ```go
+> nightly := offer.Price.Variations.Average.Total   // Amadeus's own per-night figure
+> if nightly.Amount().IsZero() {
+>     nightly, _, _ = offer.Price.Payable().Split(nights)
+> }
+> ```
+
+Setting `PriceRange` without `Currency` is rejected by the SDK before any network
+call, because Amadeus rejects it too.
 
 ### Refundability is answered honestly
 
@@ -465,6 +530,29 @@ by source: a chain hotel returns rooms, facilities and fifty photographs; an
 aggregator listing returns a name and an address. Absent blocks are `nil`, so
 you can tell "not published" from "published empty".
 
+### Room photographs are usually not on the room
+
+Amadeus mixes prose blocks into the same `media` array as photographs, so both
+`Hotel.Media` and `Room.Media` are split: everything left in `Media` carries a
+real image URL, and the text moves to `Descriptions`, tagged with Amadeus's own
+label.
+
+The catch is where the photographs live. Across five measured properties, **named
+bookable rooms carried no images at all** — Amadeus attaches room photography to
+the property, or to unnamed room entries, and gives the named rooms a
+`DEFAULT_ROOM_NAME` text block instead. So an empty `room.Media` is normal:
+
+```go
+photos := room.Media          // images only; may legitimately be empty
+if len(photos) == 0 {
+    photos = hotel.Media      // the property's pool, where room shots usually are
+}
+```
+
+`Hotel.Media` is not sorted by subject either — properties commonly label every
+photograph `MISCELLANEOUS`, so guest-room shots cannot be separated from lobby
+shots by category.
+
 Content does not change per stay, so it is worth caching. An offer is not.
 
 > Property-level `Policies` here are descriptive. The terms that actually bind a
@@ -525,6 +613,19 @@ if number, ok := b.ConfirmationNumber(); ok {
 `IsActive()` deliberately **excludes `PENDING`**. An on-request booking the
 hotel has not accepted is not a room, and reporting it as one sends a guest to a
 property with no reservation.
+
+Retrieve an order either way:
+
+```go
+order, err := client.Booking.Get(ctx, "XN_5FGHIJKLMN")        // by Amadeus order ID
+order, err := client.Booking.GetByReference(ctx, "3HHCAJ")    // by GDS PNR locator
+```
+
+`GetByReference` sends the locator as a query parameter beside
+`originSystemCode=GDS`, which is what the Enterprise gateway requires; it also
+unwraps the array this endpoint returns and reports an unknown locator as
+`ErrNotFound` rather than as a blank order, since Amadeus answers one with `200`
+and an empty element.
 
 ### Managing it
 
