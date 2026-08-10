@@ -464,7 +464,10 @@ func TestCardNumberNeverAppearsInAValidationError(t *testing.T) {
 func TestGetAndGetByReference(t *testing.T) {
 	server := amadeustest.New(t)
 	server.Fixture(t, http.MethodGet, ordersPath+"/XN_5FGHIJKLMN", "order")
-	server.Fixture(t, http.MethodGet, ordersPath+"/by-reference/JKL789", "order")
+	// by-reference takes the locator as a query parameter, and wraps its order
+	// in an array, so it cannot share the by-ID fixture verbatim.
+	server.JSON(http.MethodGet, ordersPath+"/by-reference", http.StatusOK,
+		`{"data":[`+string(orderFixtureData(t))+`]}`)
 	service := booking.NewService(server.Client())
 
 	byID, err := service.Get(context.Background(), "XN_5FGHIJKLMN")
@@ -640,4 +643,61 @@ func TestBookedPricePayableFallsBackToTotal(t *testing.T) {
 	} else if price.Payable().String() != price.Total.String() {
 		t.Errorf("Payable() = %s, want Total %s", price.Payable(), price.Total)
 	}
+}
+
+func TestGetByReferenceSendsQueryParametersNotAPathSegment(t *testing.T) {
+	// The Enterprise guide documents this endpoint as
+	//   GET /v2/booking/hotel-orders/by-reference?originSystemCode=GDS&reference=X
+	// Appending the reference as a path segment instead returns 400 INVALID
+	// FORMAT from Amadeus, so this is the difference between working and not.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, "/v2/booking/hotel-orders/by-reference", http.StatusOK,
+		`{"data":[{"id":"ORDER1","type":"hotel-order"}]}`)
+
+	order, err := booking.NewService(server.Client()).GetByReference(context.Background(), "3HHCAJ")
+	if err != nil {
+		t.Fatalf("GetByReference: %v", err)
+	}
+	if order.ID != "ORDER1" {
+		t.Errorf("order.ID = %q, want ORDER1", order.ID)
+	}
+
+	got := server.LastRequest(t)
+	if got.Path != "/v2/booking/hotel-orders/by-reference" {
+		t.Errorf("path = %q, want the bare by-reference path", got.Path)
+	}
+	if v := got.Query.Get("reference"); v != "3HHCAJ" {
+		t.Errorf("query reference = %q, want 3HHCAJ", v)
+	}
+	if v := got.Query.Get("originSystemCode"); v != "GDS" {
+		t.Errorf("query originSystemCode = %q, want GDS", v)
+	}
+}
+
+func TestGetByReferenceReportsAnUnknownReferenceAsNotFound(t *testing.T) {
+	// Amadeus answers an unknown locator with 200, a NO RESULT FOUND warning
+	// and a data array holding one empty object. Returning that as a blank
+	// Order would tell the caller a booking exists when none does.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, "/v2/booking/hotel-orders/by-reference", http.StatusOK,
+		`{"warnings":[{"code":34629,"detail":"NO RESULT FOUND"}],"data":[{}]}`)
+
+	_, err := booking.NewService(server.Client()).GetByReference(context.Background(), "NOSUCH")
+	if !errors.Is(err, apierr.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// orderFixtureData returns the "data" member of the order fixture, so a test
+// needing the array-wrapped shape by-reference returns can reuse the same
+// captured order rather than duplicating it.
+func orderFixtureData(t *testing.T) []byte {
+	t.Helper()
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(amadeustest.Load(t, "order"), &envelope); err != nil {
+		t.Fatalf("decoding the order fixture: %v", err)
+	}
+	return envelope.Data
 }

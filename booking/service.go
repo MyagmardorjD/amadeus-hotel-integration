@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/techpartners-asia/amadeus-hotel-integration/v2/apierr"
@@ -16,8 +17,13 @@ import (
 // Endpoint paths on the Hotel Booking APIs.
 const (
 	ordersPath  = "/v2/booking/hotel-orders"
-	byReference = ordersPath + "/by-reference/"
+	byReference = ordersPath + "/by-reference"
 )
+
+// gdsOriginSystem is the originSystemCode the by-reference lookup requires. A
+// PNR locator is a GDS record, and the Enterprise guide documents GDS as the
+// value for every example of this call.
+const gdsOriginSystem = "GDS"
 
 // Service creates and manages reservations. Obtain one from the SDK client:
 //
@@ -152,11 +158,39 @@ func (s *service) Get(ctx context.Context, id OrderID) (*Order, error) {
 	return s.fetch(ctx, ordersPath+"/"+string(id))
 }
 
+// GetByReference looks an order up by its GDS record locator.
+//
+// The locator travels as a query parameter beside originSystemCode, not as a
+// path segment: Amadeus answers /by-reference/{locator} with 400 INVALID
+// FORMAT. Unlike the other retrievals this one returns its order inside an
+// array, and answers an unknown locator with 200 and an empty element rather
+// than a 404.
 func (s *service) GetByReference(ctx context.Context, reference string) (*Order, error) {
 	if strings.TrimSpace(reference) == "" {
 		return nil, apierr.Invalid("reference", "is required")
 	}
-	return s.fetch(ctx, byReference+reference)
+
+	envelope, err := amadeus.Do[[]bookingres.HotelOrder](ctx, s.client, amadeus.Request{
+		Path: byReference,
+		Query: url.Values{
+			"originSystemCode": {gdsOriginSystem},
+			"reference":        {reference},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// An unknown locator comes back as 200 with a single empty object beside a
+	// NO RESULT FOUND warning. Reporting that as a not-found error is what
+	// makes errors.Is(err, sdk.ErrNotFound) work here as it does elsewhere.
+	if len(envelope.Data) == 0 || envelope.Data[0].Id == "" {
+		return nil, apierr.New(http.StatusNotFound, nil,
+			fmt.Sprintf("no hotel order for reference %q", reference))
+	}
+
+	order := mapOrder(envelope.Data[0])
+	return &order, nil
 }
 
 func (s *service) Cancel(ctx context.Context, orderID OrderID, bookingID BookingID) (*Order, error) {
