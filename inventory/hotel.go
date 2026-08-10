@@ -12,6 +12,7 @@
 package inventory
 
 import (
+	"github.com/techpartners-asia/amadeus-hotel-integration/v2/codes"
 	"github.com/techpartners-asia/amadeus-hotel-integration/v2/geo"
 )
 
@@ -56,6 +57,17 @@ type Hotel struct {
 
 	// IATACode is the city or airport code the property is filed under.
 	IATACode string
+
+	// Rating is the property's star rating, 1 to 5. It is zero when Amadeus
+	// sent none: Hotel List returns it on every hotel when the search filtered
+	// on Ratings, and omits it entirely otherwise, so an unfiltered search
+	// leaves this zero even for properties that do have stars.
+	Rating int
+	// Amenities are the amenity codes Amadeus echoed back, which it does when
+	// the search filtered on Amenities. It is empty otherwise, and empty is not
+	// evidence that a property lacks them - use the content context for the
+	// full list.
+	Amenities []codes.Amenity
 	// Position is the property's coordinates, or nil when Amadeus could not
 	// locate it. A pointer rather than a zero value, because 0,0 is a real
 	// point in the Gulf of Guinea and is not the same as "unknown".

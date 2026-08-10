@@ -407,3 +407,36 @@ func TestContextCancellationPropagates(t *testing.T) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }
+
+func TestStarRatingAndAmenitiesAreMapped(t *testing.T) {
+	// Amadeus echoes the star rating back on every hotel when the search filters
+	// on ratings, and the amenity codes when it filters on amenities. Dropping
+	// them means a caller who filtered by stars cannot show the stars.
+	server := amadeustest.New(t)
+	server.JSON(http.MethodGet, pathByCity, http.StatusOK, `{"data":[
+	  {"hotelId":"BWPAR635","name":"BW PREMIER FAUBOURG 88","chainCode":"BW",
+	   "iataCode":"PAR","rating":3,"amenities":["WIFI","SWIMMING_POOL"]},
+	  {"hotelId":"HLPAR266","name":"HILTON PARIS OPERA","chainCode":"HL",
+	   "iataCode":"PAR"}]}`)
+
+	hotels, err := inventory.NewService(server.Client()).ByCity(
+		context.Background(), inventory.CityQuery{CityCode: "PAR"})
+	if err != nil {
+		t.Fatalf("ByCity: %v", err)
+	}
+	if len(hotels) != 2 {
+		t.Fatalf("got %d hotels", len(hotels))
+	}
+
+	if hotels[0].Rating != 3 {
+		t.Errorf("Rating = %d, want 3", hotels[0].Rating)
+	}
+	if len(hotels[0].Amenities) != 2 || hotels[0].Amenities[0] != codes.AmenityWifi {
+		t.Errorf("Amenities = %v", hotels[0].Amenities)
+	}
+	// A hotel Amadeus sent neither for must not invent them.
+	if hotels[1].Rating != 0 || len(hotels[1].Amenities) != 0 {
+		t.Errorf("absent fields were invented: rating=%d amenities=%v",
+			hotels[1].Rating, hotels[1].Amenities)
+	}
+}

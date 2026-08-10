@@ -19,9 +19,15 @@ type InventoryHotel struct {
 	// DupeID identifies properties that are duplicated across sources. Hotel
 	// List sends it as a JSON number while Hotel Search sends the same concept
 	// as a string; the domain normalises both to a string.
-	DupeID     int64             `json:"dupeId"`
-	Name       string            `json:"name"`
-	HotelID    string            `json:"hotelId"`
+	DupeID  int64  `json:"dupeId"`
+	Name    string `json:"name"`
+	HotelID string `json:"hotelId"`
+	// Rating is the property's star rating. Amadeus returns it on every hotel
+	// when the search filters on ratings, and omits it otherwise.
+	Rating int `json:"rating,omitempty"`
+	// Amenities are the amenity codes Amadeus echoes back when the search
+	// filters on amenities.
+	Amenities  []string          `json:"amenities,omitempty"`
 	GeoCode    *GeoCode          `json:"geoCode,omitempty"`
 	Address    *InventoryAddress `json:"address,omitempty"`
 	Distance   *Distance         `json:"distance,omitempty"`
