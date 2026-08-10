@@ -18,9 +18,11 @@
 package apierr
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -61,6 +63,56 @@ type Detail struct {
 	Source Source `json:"source"`
 	// Documentation links to further reading, when Amadeus supplies it.
 	Documentation string `json:"documentation,omitempty"`
+}
+
+// UnmarshalJSON decodes a Detail, tolerating the two spellings Amadeus uses for
+// its numeric fields.
+//
+// The shopping endpoints send {"code": 477, "status": 400}; the authentication
+// and header errors send {"code": "38191", "status": "401"}. A plain int field
+// rejects the quoted form, and because the errors array is decoded as a whole,
+// one quoted code discards every detail in the response - leaving a bare status
+// code and no explanation, in exactly the case where the explanation matters.
+//
+// A code that is neither form is left as zero rather than failing the decode,
+// so the title and detail still reach the caller.
+func (d *Detail) UnmarshalJSON(data []byte) error {
+	// The alias sheds the method set, so this does not recurse.
+	type alias Detail
+	var raw struct {
+		alias
+		Status json.RawMessage `json:"status"`
+		Code   json.RawMessage `json:"code"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	*d = Detail(raw.alias)
+	d.Status = flexibleInt(raw.Status)
+	d.Code = flexibleInt(raw.Code)
+	return nil
+}
+
+// flexibleInt reads a JSON value that may be a number or a quoted number,
+// returning zero for anything else.
+func flexibleInt(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // Source identifies the request element that triggered an error.
