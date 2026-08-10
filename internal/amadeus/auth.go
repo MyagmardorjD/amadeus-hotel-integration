@@ -119,6 +119,7 @@ func (m *tokenManager) authenticate(ctx context.Context) (*tokenResponse, error)
 		// A bad credential arrives here as a 401. Surfacing it as a typed
 		// APIError means errors.Is(err, apierr.ErrUnauthorized) works for an
 		// authentication failure exactly as it does for a rejected request.
+		m.logAuthFailure(ctx, res.StatusCode, body)
 		return nil, apierr.New(res.StatusCode, parseDetails(body), string(body))
 	}
 

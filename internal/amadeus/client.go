@@ -239,13 +239,25 @@ func (c *Client) send(ctx context.Context, req Request) ([]byte, error) {
 	// the body is inspected regardless of status.
 	details := parseDetails(body)
 	if len(details) > 0 {
+		c.logFailure(ctx, req, status, body)
 		return nil, apierr.New(status, details, string(body))
 	}
 	if status < 200 || status > 299 {
+		c.logFailure(ctx, req, status, body)
 		return nil, apierr.New(status, nil, string(body))
 	}
 
 	return body, nil
+}
+
+// requestURL renders the URL a request will be sent to, for logging a failure
+// after the fact. build() constructs the same string for the request itself.
+func (c *Client) requestURL(req Request) string {
+	target := c.host + req.Path
+	if len(req.Query) > 0 {
+		target += "?" + req.Query.Encode()
+	}
+	return target
 }
 
 // attempt performs a single authenticated round trip.

@@ -81,6 +81,49 @@ func (c *Client) logResponse(ctx context.Context, method, url, path string, stat
 	c.logger.LogAttrs(ctx, slog.LevelDebug, "amadeus response", attrs...)
 }
 
+// logFailure records a call that failed, with the request that caused it and
+// the response that came back, at Error level.
+//
+// Unlike the Debug traffic log this is deliberately not gated on Debug. Debug
+// is off in production, which is exactly where a failed booking has to be
+// explicable afterwards, and the response body alone does not say which call
+// produced it - the request body is the half that identifies the booking.
+//
+// The request body is redacted by the same rules as the Debug log. Logging more
+// on failure must not become a way for a card number to reach a log.
+func (c *Client) logFailure(ctx context.Context, req Request, status int, body []byte) {
+	if !c.logger.Enabled(ctx, slog.LevelError) {
+		return
+	}
+
+	attrs := []slog.Attr{
+		slog.String("method", req.method()),
+		slog.String("url", c.requestURL(req)),
+		slog.Int("status", status),
+		slog.String("response", string(body)),
+	}
+	if req.Body != nil {
+		attrs = append(attrs, slog.String("request", redactBody(req.Body)))
+	}
+	c.logger.LogAttrs(ctx, slog.LevelError, "amadeus call failed", attrs...)
+}
+
+// logAuthFailure records a rejected authentication exchange.
+//
+// It logs the response but never the request: the request carries the client
+// secret, and no failure is worth leaking a credential to explain. A failed
+// auth response carries no token, so it is safe to log as received.
+func (m *tokenManager) logAuthFailure(ctx context.Context, status int, body []byte) {
+	if !m.logger.Enabled(ctx, slog.LevelError) {
+		return
+	}
+	m.logger.LogAttrs(ctx, slog.LevelError, "amadeus authentication failed",
+		slog.String("url", m.host+tokenPath),
+		slog.Int("status", status),
+		slog.String("response", string(body)),
+	)
+}
+
 // bookingPathPrefix identifies the Hotel Booking endpoints.
 //
 // It is spelled out here rather than imported from the booking package, because

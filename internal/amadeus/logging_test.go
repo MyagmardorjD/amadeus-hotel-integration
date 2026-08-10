@@ -330,3 +330,96 @@ func TestUnparseableBodyIsOmittedNotLoggedRaw(t *testing.T) {
 		t.Errorf("an unencodable body should be omitted, got %q", got)
 	}
 }
+
+func TestFailedCallIsLoggedAtErrorLevelWithBothBodies(t *testing.T) {
+	// The Debug traffic log is off in production. A failure still has to be
+	// diagnosable, and the request is the half that says which call failed, so
+	// a failed call logs request and response at Error regardless of Debug.
+	var buf bytes.Buffer
+	infoLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 400, `{"errors":[{"code":477,"title":"INVALID FORMAT"}]}`)
+	})
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: infoLogger,
+	})
+
+	_, err := Do[payload](context.Background(), client, Request{
+		Method: http.MethodPost, Path: "/v2/booking/hotel-orders",
+		Body: map[string]any{"data": map[string]any{"offerId": "OFFER1"}}, AmadeusJSON: true,
+	})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "amadeus call failed") {
+		t.Fatalf("no failure was logged at Error level: %s", logged)
+	}
+	if !strings.Contains(logged, "INVALID FORMAT") {
+		t.Error("the response body was not logged with the failure")
+	}
+	if !strings.Contains(logged, "OFFER1") {
+		t.Error("the request body was not logged with the failure")
+	}
+	if !strings.Contains(logged, "/v2/booking/hotel-orders") {
+		t.Error("the URL was not logged with the failure")
+	}
+}
+
+func TestFailureLogStillRedactsTheCard(t *testing.T) {
+	// Logging the request on failure must not become a way to leak a card
+	// number, so the failure log redacts exactly as the Debug log does.
+	var buf bytes.Buffer
+	infoLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 400, `{"errors":[{"code":477,"title":"INVALID FORMAT"}]}`)
+	})
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: infoLogger,
+	})
+
+	const pan = "4111111111111111"
+	_, _ = Do[payload](context.Background(), client, Request{
+		Method: http.MethodPost, Path: "/v2/booking/hotel-orders",
+		Body: map[string]any{"payment": map[string]any{"cardNumber": pan, "holderName": "ADA"}},
+	})
+
+	logged := buf.String()
+	if strings.Contains(logged, pan) {
+		t.Error("the card number leaked into the failure log")
+	}
+	if !strings.Contains(logged, redactPlaceholder) {
+		t.Error("the failure log did not redact the card")
+	}
+	if !strings.Contains(logged, "ADA") {
+		t.Error("redaction removed the non-sensitive fields from the failure log")
+	}
+}
+
+func TestSuccessLogsNothingAtErrorLevel(t *testing.T) {
+	var buf bytes.Buffer
+	infoLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	stub := newStubServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, `{"data":{"id":"MC"}}`)
+	})
+	client := NewClient(Options{
+		ClientID: "id", ClientSecret: "secret",
+		Host: stub.URL, HTTPClient: stub.Server.Client(),
+		Logger: infoLogger,
+	})
+
+	if _, err := Do[payload](context.Background(), client, Request{Path: "/v3/x"}); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a successful call logged at Error: %s", buf.String())
+	}
+}
