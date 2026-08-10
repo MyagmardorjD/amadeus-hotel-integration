@@ -397,6 +397,9 @@ func (r Reservation) validateRooms(errs apierr.ValidationErrors) apierr.Validati
 	for _, guest := range r.Guests {
 		known[guest.ID] = true
 	}
+	// occupies tracks which guests are already assigned a room, across every
+	// room association rather than within one.
+	occupies := make(map[int]bool, len(r.Guests))
 
 	for i, room := range r.Rooms {
 		field := fmt.Sprintf("Rooms[%d]", i)
@@ -416,6 +419,15 @@ func (r Reservation) validateRooms(errs apierr.ValidationErrors) apierr.Validati
 				errs = append(errs, apierr.Invalidf(field+".GuestIDs",
 					"guest ID %d is not in Guests", id))
 			}
+			// A person occupies one room. Amadeus rejects a guest who appears
+			// in two room associations as "Ids must be unique", a 400 naming
+			// neither the guest nor the room, so it is caught here instead.
+			if occupies[id] {
+				errs = append(errs, apierr.Invalidf(field+".GuestIDs",
+					"guest ID %d already occupies another room; each guest belongs to one room", id))
+				continue
+			}
+			occupies[id] = true
 		}
 		for id := range room.LoyaltyIDs {
 			if !known[id] {

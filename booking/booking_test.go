@@ -701,3 +701,45 @@ func orderFixtureData(t *testing.T) []byte {
 	}
 	return envelope.Data
 }
+
+func TestAGuestCannotOccupyTwoRooms(t *testing.T) {
+	// A person is in one room. Sending the same guest ID in two room
+	// associations is rejected by Amadeus as "Ids must be unique", a 400 that
+	// names neither the guest nor the room - so it is caught here instead,
+	// which is the same reason the SDK checks that a guest ID exists at all.
+	r := validReservation()
+	r.Guests = []booking.Guest{
+		{ID: 1, Title: "MS", FirstName: "Ada", LastName: "Lovelace",
+			Email: "ada@example.invalid", Phone: "+33679278416"},
+		{ID: 2, Title: "MR", FirstName: "Alan", LastName: "Turing",
+			Email: "alan@example.invalid", Phone: "+33679278417"},
+	}
+	r.Rooms = []booking.RoomRequest{
+		{OfferID: "OFFER1", GuestIDs: []int{1, 2}},
+		{OfferID: "OFFER2", GuestIDs: []int{2}}, // guest 2 is already in room 0
+	}
+
+	service, _ := newService(t)
+	_, err := service.Create(context.Background(), r)
+	if !errors.Is(err, apierr.ErrValidation) {
+		t.Fatalf("err = %v, want a validation error", err)
+	}
+	if !strings.Contains(err.Error(), "2") {
+		t.Errorf("the error should name the repeated guest: %v", err)
+	}
+
+	// The same guest twice within one room is equally impossible.
+	r.Rooms = []booking.RoomRequest{{OfferID: "OFFER1", GuestIDs: []int{1, 1}}}
+	if _, err := service.Create(context.Background(), r); !errors.Is(err, apierr.ErrValidation) {
+		t.Errorf("a guest repeated within one room was accepted: %v", err)
+	}
+
+	// One guest per room, no repeats, must still pass.
+	r.Rooms = []booking.RoomRequest{
+		{OfferID: "OFFER1", GuestIDs: []int{1}},
+		{OfferID: "OFFER2", GuestIDs: []int{2}},
+	}
+	if _, err := service.Create(context.Background(), r); err != nil {
+		t.Errorf("a valid two-room reservation was rejected: %v", err)
+	}
+}
