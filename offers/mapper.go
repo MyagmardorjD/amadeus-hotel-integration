@@ -128,7 +128,7 @@ func mapOffer(o offersdto.OfferResponse) Offer {
 			CheckOut: parseDate(o.CheckOutDate),
 		},
 		Guests:        Guests{Adults: o.Guests.Adults, ChildAges: o.Guests.ChildAges},
-		RoomQuantity:  o.RoomQuantity,
+		RoomQuantity:  o.RoomQuantity.Int(),
 		Room:          mapRoom(o.Room),
 		Price:         mapPrice(o.Price),
 		Policies:      mapPolicies(o.Policies),

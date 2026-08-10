@@ -981,3 +981,40 @@ func TestRoomProviderReferenceIsMapped(t *testing.T) {
 		t.Error("an offer-level provider reference was invented")
 	}
 }
+
+func TestRoomQuantityDecodesQuotedOrBare(t *testing.T) {
+	// Amadeus sends roomQuantity as a bare number on some responses and as a
+	// quoted string on others - the Enterprise guide shows both. A plain int
+	// field rejects the quoted form, and because the offers array decodes as a
+	// whole, one quoted value discards the entire search result.
+	for _, tc := range []struct{ name, wire string }{
+		{"bare", `1`},
+		{"quoted", `"2"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := amadeustest.New(t)
+			server.JSON(http.MethodGet, searchPath, http.StatusOK, `{"data":[{
+			  "type":"hotel-offers",
+			  "hotel":{"hotelId":"RTPAR666","name":"Test"},
+			  "available":true,
+			  "offers":[{"id":"OFFER1","roomQuantity":`+tc.wire+`,
+			             "price":{"currency":"EUR","total":"900.00"}}]}]}`)
+
+			results, err := offers.NewService(server.Client()).Search(
+				context.Background(), offers.SearchQuery{HotelIDs: []string{"RTPAR666"}})
+			if err != nil {
+				t.Fatalf("Search: %v", err)
+			}
+			if len(results) != 1 || len(results[0].Offers) != 1 {
+				t.Fatalf("the response was lost: %+v", results)
+			}
+			want := 1
+			if tc.name == "quoted" {
+				want = 2
+			}
+			if got := results[0].Offers[0].RoomQuantity; got != want {
+				t.Errorf("RoomQuantity = %d, want %d", got, want)
+			}
+		})
+	}
+}

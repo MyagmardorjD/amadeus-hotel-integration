@@ -103,7 +103,7 @@ type (
 		// Reference to the content provider's data.
 		ProviderContentReference *ProviderContentReferenceResponse `json:"providerContentReference,omitempty"`
 		// Number of rooms booked under this offer.
-		RoomQuantity int              `json:"roomQuantity,omitempty"`
+		RoomQuantity dto.FlexInt      `json:"roomQuantity,omitempty"`
 		Price        PriceResponse    `json:"price"`
 		Policies     PoliciesResponse `json:"policies"`
 		// Additional chargeable or complimentary services.

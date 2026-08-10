@@ -1,5 +1,11 @@
 package dto
 
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+)
+
 // Shared wire structures used by more than one Amadeus hotel API. These are
 // identical across the search, booking and content schemas, so they are defined
 // once here rather than per endpoint.
@@ -396,3 +402,45 @@ type GeoCodeResponse struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 }
+
+// FlexInt is an integer Amadeus may send either as a JSON number or as a quoted
+// number.
+//
+// It is not consistent: roomQuantity arrives as 1 on some responses and as "2"
+// on others, and the Enterprise guide shows both spellings. A plain int field
+// rejects the quoted form, and since a response decodes as a whole, one quoted
+// value discards everything else in it.
+//
+// A value that is neither form decodes as zero rather than failing, on the same
+// reasoning: one odd field should not cost the caller the entire response.
+type FlexInt int
+
+// UnmarshalJSON accepts a number, a quoted number, or null.
+func (f *FlexInt) UnmarshalJSON(data []byte) error {
+	*f = 0
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+
+	var n int
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = FlexInt(n)
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		*f = FlexInt(n)
+	}
+	return nil
+}
+
+// Int returns the value as a plain int, for mappers building domain types.
+func (f FlexInt) Int() int { return int(f) }
