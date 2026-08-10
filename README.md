@@ -219,6 +219,8 @@ type Hotel struct {
     ChainCode          string            // and BrandCode, MasterChainCode
     DupeID             string            // groups the same property across sources
     IATACode           string
+    Rating             int               // star rating; 0 unless you filtered on Ratings
+    Amenities          []codes.Amenity   // echoed back only if you filtered on Amenities
     Position           *geo.Coordinates  // nil when Amadeus cannot locate it
     Address            *Address          // nil when Amadeus sent none
     DistanceFromSearch *geo.Distance     // set by ByCity/ByGeocode, nil for ByIDs
@@ -230,6 +232,13 @@ type Hotel struct {
 `Position` is a pointer on purpose. `0,0` is a real point in the Gulf of Guinea;
 defaulting an unlocatable property to it would put it in the Atlantic and it
 would pass a non-zero check.
+
+`Rating` and `Amenities` are **echoes of your filter, not property facts**.
+Amadeus returns the star rating on every hotel when the search filtered on
+`Ratings`, and omits it entirely otherwise — so an unfiltered search leaves
+`Rating` zero even for properties that do have stars. Same for `Amenities`. An
+empty value is not evidence a property lacks them; use the content context for
+the full picture.
 
 `inventory.IDs(hotels)` extracts the property codes for the other contexts.
 
@@ -855,8 +864,26 @@ client, _ := sdk.New(sdk.Config{
 ```
 
 It logs the method, URL, status, timing and size of each call. Leave your
-handler at `Info` or higher and nothing is logged — and nothing is spent
-formatting it, because the work is skipped when `Debug` is disabled.
+handler at `Info` or higher and the per-call traffic log goes quiet — and
+nothing is spent formatting it, because the work is skipped when `Debug` is
+disabled.
+
+**Failures are logged at `Error`, whatever level you set.** `Debug` is off in
+production, which is exactly where a failed booking has to be explicable
+afterwards, so a failed call logs both halves — the request that caused it and
+the response that came back:
+
+```json
+{"level":"ERROR","msg":"amadeus call failed","method":"GET",
+ "url":".../v3/shopping/hotel-offers?...&hotelIds=ZZZZZZZZ","status":400,
+ "response":"{\"errors\":[{\"code\":3237,\"detail\":\"Property codes not found in system\"}]}",
+ "request":"{\"data\":{...}}"}
+```
+
+The request body is redacted by the same rules as the `Debug` log — logging more
+on failure must not become a way for a card number to reach a log. A rejected
+authentication exchange logs `amadeus authentication failed` with its response
+only, never its request, which carries the client secret.
 
 **Response bodies are logged only where they earn their place**, because one
 search runs to hundreds of kilobytes and a reservation carries guest names,
