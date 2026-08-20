@@ -75,6 +75,53 @@ func mapDupeID(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
 
+// mapSuggestions translates the Hotel Name Autocomplete matches into domain
+// suggestions.
+func mapSuggestions(wire []dto.AutocompleteLocation) []Suggestion {
+	if wire == nil {
+		return nil
+	}
+	out := make([]Suggestion, len(wire))
+	for i, location := range wire {
+		out[i] = mapSuggestion(location)
+	}
+	return out
+}
+
+// mapSuggestion translates one autocomplete match. The wire ID and type are
+// dropped: the location resource ID appears in no other hotel API, and type is
+// always "location".
+func mapSuggestion(location dto.AutocompleteLocation) Suggestion {
+	suggestion := Suggestion{
+		Name:      location.Name,
+		SubType:   codes.HotelSubType(location.SubType),
+		IATACode:  location.IataCode,
+		Relevance: location.Relevance,
+	}
+
+	if len(location.HotelIDs) > 0 {
+		suggestion.HotelIDs = make([]HotelID, len(location.HotelIDs))
+		for i, id := range location.HotelIDs {
+			suggestion.HotelIDs[i] = HotelID(id)
+		}
+	}
+	if location.GeoCode != nil {
+		suggestion.Position = &geo.Coordinates{
+			Latitude:  location.GeoCode.Latitude,
+			Longitude: location.GeoCode.Longitude,
+		}
+	}
+	if location.Address != nil {
+		suggestion.Address = &Address{
+			CityName:    location.Address.CityName,
+			StateCode:   location.Address.StateCode,
+			CountryCode: location.Address.CountryCode,
+		}
+	}
+
+	return suggestion
+}
+
 // mapAmenities turns the amenity codes Hotel List echoes back into typed codes,
 // leaving nil when Amadeus sent none so "not reported" stays distinct from
 // "reported as empty".

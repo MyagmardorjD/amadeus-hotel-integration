@@ -74,7 +74,8 @@ import (
 // pointed at different environments, or carrying different credentials - since
 // each holds its own token.
 type Client struct {
-	// Inventory finds hotels: by city, by coordinates or by property code.
+	// Inventory finds hotels: by city, by coordinates, by property code, or by
+	// name as a user types it.
 	Inventory inventory.Service
 	// Content describes a property: rooms, facilities, policies, photographs.
 	Content content.Service

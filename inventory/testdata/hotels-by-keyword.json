@@ -1,0 +1,63 @@
+{
+  "data": [
+    {
+      "id": 4630140,
+      "name": "DE PARIS SAINT GEORGES EX KYRIAD PARIS",
+      "iataCode": "PAR",
+      "subType": "HOTEL_LEISURE",
+      "relevance": 74,
+      "type": "location",
+      "hotelIds": [
+        "CTPARB08"
+      ],
+      "address": {
+        "cityName": "PARIS",
+        "countryCode": "FR"
+      },
+      "geoCode": {
+        "latitude": 48.88081,
+        "longitude": 2.33541
+      }
+    },
+    {
+      "id": 4629897,
+      "name": "DE PARIS OPERA EX DE PARIS MAUBEUGE",
+      "iataCode": "PAR",
+      "subType": "HOTEL_LEISURE",
+      "relevance": 74,
+      "type": "location",
+      "hotelIds": [
+        "CTPARATH",
+        "CTPARB11"
+      ],
+      "address": {
+        "cityName": "PARIS",
+        "countryCode": "FR"
+      },
+      "geoCode": {
+        "latitude": 48.87877,
+        "longitude": 2.34593
+      }
+    },
+    {
+      "id": 3054489,
+      "name": "PARIS LAS VEGAS",
+      "iataCode": "LAS",
+      "subType": "HOTEL_GDS",
+      "relevance": 70,
+      "type": "location",
+      "hotelIds": [
+        "HLLAS633"
+      ],
+      "address": {
+        "cityName": "LAS VEGAS",
+        "stateCode": "NV",
+        "countryCode": "US"
+      },
+      "geoCode": {
+        "latitude": 36.11244,
+        "longitude": -115.17278
+      }
+    }
+  ]
+}

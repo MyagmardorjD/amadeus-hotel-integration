@@ -65,7 +65,7 @@ types. They are drawn on the seams the business has, not on Amadeus's URLs.
 
 | Context | Package | Answers | Amadeus API |
 |---|---|---|---|
-| **Inventory** | `inventory` | Which hotels exist, and where? | Hotel List v1.2 |
+| **Inventory** | `inventory` | Which hotels exist, and where? | Hotel List v1.2, Hotel Name Autocomplete v1 |
 | **Content** | `content` | What is this property like? | Hotel Content v3.1 |
 | **Offers** | `offers` | What does a stay cost? | Hotel Search v3.5 |
 | **Booking** | `booking` | Reserve it, and manage the reservation | Hotel Booking v2.x |
@@ -182,7 +182,9 @@ func main() {
 
 ## Inventory — finding hotels
 
-Three ways to find properties. All return `[]inventory.Hotel`.
+Four ways to find properties. The first three return `[]inventory.Hotel`;
+`ByKeyword` returns `[]inventory.Suggestion` and is covered
+[below](#autocomplete--matching-a-name-as-it-is-typed).
 
 ```go
 // Around a city or airport code
@@ -207,6 +209,12 @@ hotels, err := client.Inventory.ByGeocode(ctx, inventory.GeocodeQuery{
 // By property code
 hotels, err := client.Inventory.ByIDs(ctx, inventory.IDsQuery{
     HotelIDs: []string{"MCLONGHM", "ACPAR419"},
+})
+
+// By name, as a user types it
+suggestions, err := client.Inventory.ByKeyword(ctx, inventory.KeywordQuery{
+    Keyword:     "PARI",
+    CountryCode: "FR",
 })
 ```
 
@@ -241,6 +249,59 @@ empty value is not evidence a property lacks them; use the content context for
 the full picture.
 
 `inventory.IDs(hotels)` extracts the property codes for the other contexts.
+
+### Autocomplete — matching a name as it is typed
+
+`ByKeyword` wraps the Hotel Name Autocomplete API: up to 20 hotels whose names
+best match a partial keyword, for suggest-as-you-type on a search input.
+
+```go
+suggestions, err := client.Inventory.ByKeyword(ctx, inventory.KeywordQuery{
+    Keyword:     "PARI",                    // required, 4–40 characters
+    SubTypes:    []codes.HotelSubType{...}, // Leisure (aggregators), GDS (chains); empty = both
+    CountryCode: "FR",                      // optional ISO 3166-1 alpha-2
+    Language:    "FR",                      // optional ISO 639-1; falls back to English
+    Max:         10,                        // 1–20; 0 = Amadeus's default of 20
+})
+
+for _, s := range suggestions {
+    fmt.Println(s.Name, s.HotelIDs, s.Relevance)
+}
+```
+
+A match is a `Suggestion`, not a `Hotel` — autocomplete matches names, so
+there are no chain codes, ratings or distances:
+
+```go
+type Suggestion struct {
+    Name      string
+    HotelIDs  []HotelID           // usually one; leisure dupes list each code
+    SubType   codes.HotelSubType  // which inventory it came from
+    IATACode  string
+    Relevance int                 // 1–100, higher = better match; results arrive best-first
+    Position  *geo.Coordinates    // nil when Amadeus sent none
+    Address   *Address            // city, state, country only; nil when absent
+}
+```
+
+`suggestion.IDs()` hands the property codes to the offers or content context,
+so pick-a-suggestion-then-price-it chains directly.
+
+Two things worth knowing when wiring this to a UI:
+
+- **Amadeus rejects keywords under 4 characters**, and the SDK rejects them
+  locally with `ErrValidation` — so don't fire a request before the fourth
+  keystroke, and debounce (~250 ms) so you don't spend a call per key.
+- `subType` is mandatory on the wire; when `SubTypes` is empty the SDK sends
+  both values, which is what autocomplete almost always wants.
+
+> **Entitlement.** Hotel Name Autocomplete is a separate product on the
+> Enterprise gateway, and a subscription that carries Hotel List does not
+> automatically carry it. When it is missing, the gateway rejects the call with
+> `ErrUnauthorized` — Amadeus error 38190, "Invalid access token" — even though
+> the same token works for every other inventory call (measured 2026-08). Ask
+> your Amadeus account manager to add it, or run the live suite's
+> `TestInventoryByKeyword` to check a subscription.
 
 ---
 

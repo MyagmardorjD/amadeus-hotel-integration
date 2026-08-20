@@ -61,6 +61,38 @@ type Retailing struct {
 	Sponsorship *Sponsorship `json:"sponsorship,omitempty"`
 }
 
+// AutocompleteLocation is one element of the Hotel Name Autocomplete (v1) data
+// array. Amadeus models each match as a "location" resource, so the identity
+// fields differ from InventoryHotel: hotelIds is plural, because a leisure
+// property's duplicate codes are listed beside the primary one.
+type AutocompleteLocation struct {
+	// ID is Amadeus's internal location resource ID. It appears in no other
+	// hotel API, so the domain does not carry it.
+	ID   int64  `json:"id"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	// IataCode is the city or airport code the property is filed under.
+	IataCode string `json:"iataCode"`
+	// SubType is which inventory the match came from: HOTEL_GDS or
+	// HOTEL_LEISURE.
+	SubType string `json:"subType"`
+	// Relevance ranks the match against the keyword, 1 to 100.
+	Relevance int      `json:"relevance"`
+	HotelIDs  []string `json:"hotelIds"`
+	// Address here carries only city, state and country - no street lines or
+	// postal code, unlike the Hotel List address.
+	Address *AutocompleteAddress `json:"address,omitempty"`
+	GeoCode *GeoCode             `json:"geoCode,omitempty"`
+}
+
+// AutocompleteAddress is the reduced address shape Hotel Name Autocomplete
+// sends.
+type AutocompleteAddress struct {
+	CityName    string `json:"cityName"`
+	StateCode   string `json:"stateCode"`
+	CountryCode string `json:"countryCode"`
+}
+
 // Sponsorship marks a property whose placement was paid for.
 type Sponsorship struct {
 	IsSponsored bool `json:"isSponsored"`

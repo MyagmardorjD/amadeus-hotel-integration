@@ -1,12 +1,13 @@
 // Package inventory answers "which hotels exist, and where".
 //
-// It is the bounded context over Amadeus's Hotel List API. Its concern is
-// locating properties, not describing them and not pricing them: a Hotel here
-// carries an identity, a position and enough address to show on a map. For a
+// It is the bounded context over Amadeus's Hotel List API, plus the sibling
+// Hotel Name Autocomplete API that ByKeyword wraps. Its concern is locating
+// properties, not describing them and not pricing them: a Hotel here carries
+// an identity, a position and enough address to show on a map. For a
 // property's rooms, facilities and photographs use the content context; for
 // what a stay costs use the offers context.
 //
-// The Amadeus name for this API is "Hotel List". The context is called
+// The Amadeus name for the main API is "Hotel List". The context is called
 // inventory because "list" names a mechanism rather than a concept, and would
 // collide with the verb on every other service.
 package inventory
@@ -91,7 +92,8 @@ type Hotel struct {
 	LastUpdate string
 }
 
-// Address is a postal address as Hotel List reports it.
+// Address is a postal address as Hotel List reports it. Hotel Name
+// Autocomplete reuses the type but never sends Lines or PostalCode.
 type Address struct {
 	// Lines is the street address, one element per line.
 	Lines []string

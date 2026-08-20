@@ -21,6 +21,7 @@ type Catalog interface {
 	Amenities() []Amenity
 	Ratings() []Rating
 	HotelSources() []HotelSource
+	HotelSubTypes() []HotelSubType
 	BoardTypes() []BoardType
 	PaymentPolicies() []PaymentPolicy
 	ContentViews() []ContentView
@@ -37,6 +38,7 @@ func NewCatalog() Catalog { return catalog{} }
 func (catalog) Amenities() []Amenity             { return AllAmenities() }
 func (catalog) Ratings() []Rating                { return AllRatings() }
 func (catalog) HotelSources() []HotelSource      { return AllHotelSources() }
+func (catalog) HotelSubTypes() []HotelSubType    { return AllHotelSubTypes() }
 func (catalog) BoardTypes() []BoardType          { return AllBoardTypes() }
 func (catalog) PaymentPolicies() []PaymentPolicy { return AllPaymentPolicies() }
 func (catalog) ContentViews() []ContentView      { return AllContentViews() }

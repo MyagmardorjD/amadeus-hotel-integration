@@ -83,6 +83,17 @@ func run(ctx context.Context, client *amadeus.Client, cityCode, outDir string) e
 	}
 	fmt.Printf("captured %d hotels for %s\n", len(ids), cityCode)
 
+	// Hotel Name Autocomplete needs a keyword of four characters or more, so
+	// the city flag cannot feed it; "PARI" matches plenty everywhere. The
+	// capture warns rather than fails: the endpoint is documented on the
+	// self-service catalog, and an Enterprise subscription may not carry it.
+	if _, err := capture(ctx, client, outDir, "inventory", "hotels-by-keyword", amadeus.Request{
+		Path:  "/v1/reference-data/locations/hotel",
+		Query: url.Values{"keyword": {"PARI"}, "subType": {"HOTEL_LEISURE", "HOTEL_GDS"}},
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: no autocomplete fixture captured: %v\n", err)
+	}
+
 	// Content, for the first property that has any.
 	if _, err := capture(ctx, client, outDir, "content", "hotel", amadeus.Request{
 		Path:  "/v3/reference-data/locations/by-hotel",

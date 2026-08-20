@@ -129,6 +129,37 @@ type IDsQuery struct {
 	HotelIDs []string
 }
 
+// KeywordQuery suggests hotels whose names match a partial keyword, for
+// autocomplete on a search input.
+//
+//	suggestions, err := client.Inventory.ByKeyword(ctx, inventory.KeywordQuery{
+//	    Keyword:     "PARI",
+//	    CountryCode: "FR",
+//	})
+//
+// It takes none of the shared Filters: Hotel Name Autocomplete matches names,
+// not places, and accepts only the criteria here.
+type KeywordQuery struct {
+	// Keyword is the partial hotel name the user has typed. Required, 4 to 40
+	// characters - Amadeus rejects anything shorter, so an autocomplete UI
+	// should not fire before the fourth character.
+	Keyword string
+	// SubTypes selects which inventory to match against: aggregators
+	// (codes.HotelSubTypeLeisure), chains (codes.HotelSubTypeGDS) or both.
+	// Empty means both, since Amadeus requires at least one and autocomplete
+	// almost always wants the widest match.
+	SubTypes []codes.HotelSubType
+	// CountryCode restricts matches to one country, as ISO 3166-1 alpha-2,
+	// e.g. "FR". Optional.
+	CountryCode string
+	// Language is the ISO 639-1 language for the results, e.g. "FR". Optional;
+	// Amadeus falls back to English when the language is unavailable or unset.
+	Language string
+	// Max caps how many suggestions come back, 1 to 20. Zero means Amadeus's
+	// own default of 20.
+	Max int
+}
+
 // maxHotelIDsPerRequest is what Amadeus accepts in one by-hotels call. Beyond
 // it the request fails, so the SDK reports the problem rather than letting the
 // caller discover it as a 400.
@@ -188,4 +219,70 @@ func (q IDsQuery) validate() error {
 
 func (q IDsQuery) params() url.Values {
 	return url.Values{"hotelIds": {strings.Join(q.HotelIDs, ",")}}
+}
+
+// Keyword length bounds and the result cap Amadeus documents for Hotel Name
+// Autocomplete. Below four characters the endpoint rejects the request, which
+// is why an autocomplete UI waits for the fourth keystroke.
+const (
+	minKeywordLength  = 4
+	maxKeywordLength  = 40
+	maxSuggestionsCap = 20
+)
+
+func (q KeywordQuery) validate() error {
+	var errs apierr.ValidationErrors
+	switch {
+	case q.Keyword == "":
+		errs = errs.Append("Keyword", "is required")
+	case len(q.Keyword) < minKeywordLength:
+		errs = append(errs, apierr.Invalidf("Keyword",
+			"%q is too short; Amadeus needs at least %d characters", q.Keyword, minKeywordLength))
+	case len(q.Keyword) > maxKeywordLength:
+		errs = append(errs, apierr.Invalidf("Keyword",
+			"at most %d characters, got %d", maxKeywordLength, len(q.Keyword)))
+	}
+	for _, sub := range q.SubTypes {
+		if !sub.IsValid() {
+			errs = append(errs, apierr.Invalidf("SubTypes", "%q is not a sub type Amadeus accepts", sub))
+		}
+	}
+	if q.CountryCode != "" && len(q.CountryCode) != 2 {
+		errs = append(errs, apierr.Invalidf("CountryCode",
+			"%q is not an ISO 3166-1 alpha-2 code; they are exactly 2 characters", q.CountryCode))
+	}
+	if q.Language != "" && len(q.Language) != 2 {
+		errs = append(errs, apierr.Invalidf("Language",
+			"%q is not an ISO 639-1 code; they are exactly 2 characters", q.Language))
+	}
+	if q.Max < 0 || q.Max > maxSuggestionsCap {
+		errs = append(errs, apierr.Invalidf("Max",
+			"must be 1 to %d, or 0 for the default, got %d", maxSuggestionsCap, q.Max))
+	}
+	return errs.OrNil()
+}
+
+func (q KeywordQuery) params() url.Values {
+	values := url.Values{"keyword": {q.Keyword}}
+
+	// subType is required, and unlike the other list filters it is repeated
+	// rather than comma-joined; Amadeus rejects the joined form.
+	subTypes := q.SubTypes
+	if len(subTypes) == 0 {
+		subTypes = codes.AllHotelSubTypes()
+	}
+	for _, sub := range subTypes {
+		values.Add("subType", string(sub))
+	}
+
+	if q.CountryCode != "" {
+		values.Set("countryCode", q.CountryCode)
+	}
+	if q.Language != "" {
+		values.Set("lang", q.Language)
+	}
+	if q.Max > 0 {
+		values.Set("max", strconv.Itoa(q.Max))
+	}
+	return values
 }

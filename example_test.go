@@ -117,6 +117,14 @@ func ExampleClient_inventorySearches() {
 	_, _ = client.Inventory.ByIDs(ctx, inventory.IDsQuery{
 		HotelIDs: []string{"MCLONGHM", "ACPAR419"},
 	})
+
+	suggestions, _ := client.Inventory.ByKeyword(ctx, inventory.KeywordQuery{
+		Keyword:     "PARI",
+		CountryCode: "FR",
+	})
+	for _, s := range suggestions {
+		fmt.Println(s.Name, s.HotelIDs, s.Relevance)
+	}
 }
 
 func ExampleClient_offerPricing() {
