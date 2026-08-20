@@ -18,7 +18,9 @@ package livetest
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,21 +37,59 @@ import (
 // credentials are available.
 func newClient(t *testing.T) *sdk.Client {
 	t.Helper()
+	return newClientWithTransport(t, nil)
+}
+
+// newClientWithTransport is newClient with the round tripper replaced, for the
+// one test that needs to see the raw traffic. A nil transport leaves the SDK
+// to build its own client, which is what every other test wants.
+func newClientWithTransport(t *testing.T, transport http.RoundTripper) *sdk.Client {
+	t.Helper()
 
 	id, secret := os.Getenv("AMADEUS_CLIENT_ID"), os.Getenv("AMADEUS_CLIENT_SECRET")
 	if id == "" || secret == "" {
 		t.Skip("set AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET to run the live suite")
 	}
 
-	client, err := sdk.New(sdk.Config{
+	cfg := sdk.Config{
 		ClientID:     id,
 		ClientSecret: secret,
-		Environment:  sdk.Test,
-	})
+		Environment:  environment(t),
+	}
+	if transport != nil {
+		// A supplied client keeps its own timeout, so Config.Timeout would be
+		// ignored; set one here to match the SDK's own generous default.
+		cfg.HTTPClient = &http.Client{Transport: transport, Timeout: 90 * time.Second}
+	}
+
+	client, err := sdk.New(cfg)
 	if err != nil {
 		t.Fatalf("authenticating: %v", err)
 	}
 	return client
+}
+
+// environment selects the deployment to run against, defaulting to the
+// sandbox.
+//
+// Production is opt-in through AMADEUS_ENVIRONMENT because some behaviour only
+// appears there: the sandbox holds a static subset of inventory, so a provider
+// quirk seen in production may be unreproducible against Test. It is safe for
+// this suite as it stands - nothing here creates an order - but a live suite
+// pointed at production must never grow one without saying so.
+func environment(t *testing.T) sdk.Environment {
+	t.Helper()
+
+	switch value := strings.ToLower(strings.TrimSpace(os.Getenv("AMADEUS_ENVIRONMENT"))); value {
+	case "", "test":
+		return sdk.Test
+	case "production", "prod":
+		t.Log("running against PRODUCTION")
+		return sdk.Production
+	default:
+		t.Fatalf("AMADEUS_ENVIRONMENT=%q is not test or production", value)
+		return sdk.Test
+	}
 }
 
 func testContext(t *testing.T) context.Context {
@@ -109,6 +149,32 @@ func TestInventoryByGeocode(t *testing.T) {
 	if len(hotels) == 0 {
 		t.Fatal("no hotels returned around Paris")
 	}
+}
+
+func TestInventoryByKeyword(t *testing.T) {
+	// Hotel Name Autocomplete is its own product on the Enterprise gateway, so
+	// this test is also the check that a subscription carries it. Missing
+	// entitlement surfaces as a 401 with Amadeus error 38190 ("Invalid access
+	// token") on this endpoint alone, while the same token passes Hotel List.
+	client := newClient(t)
+
+	suggestions, err := client.Inventory.ByKeyword(testContext(t), inventory.KeywordQuery{
+		Keyword: "PARI",
+	})
+	if err != nil {
+		t.Fatalf("ByKeyword: %v", err)
+	}
+	if len(suggestions) == 0 {
+		t.Fatal("no suggestions returned for PARI")
+	}
+
+	for _, suggestion := range suggestions {
+		if suggestion.Name == "" || len(suggestion.HotelIDs) == 0 {
+			t.Errorf("incompletely mapped suggestion: %+v", suggestion)
+		}
+	}
+	t.Logf("mapped %d suggestions; first: %s %v",
+		len(suggestions), suggestions[0].Name, suggestions[0].HotelIDs)
 }
 
 func TestContentForARealProperty(t *testing.T) {

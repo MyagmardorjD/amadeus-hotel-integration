@@ -566,6 +566,21 @@ if errors.Is(err, sdk.ErrNotFound) {
 **Offer IDs expire.** Treat one as good for the current user session and no
 longer.
 
+**The conversion follows the offer.** `GetQuery` takes no currency parameter,
+but Amadeus still attaches the rate when the search that produced the offer
+asked for one, so the re-verified price displays in the same currency the guest
+was quoted — no need to carry rates over from the search:
+
+```go
+detail, _ := client.Offers.Get(ctx, offers.GetQuery{OfferID: offer.ID})
+
+shown := detail.DisplayTotal()   // no argument: the detail holds its own offer
+fmt.Println(shown)               // "4112648 MNT"
+fmt.Println(shown.Original)      // "988.3 EUR" — what the card is charged
+
+detail.Rates                     // the same ConversionRates a search returns
+```
+
 ---
 
 ## Content — describing a property

@@ -7,6 +7,7 @@ import (
 	"github.com/techpartners-asia/amadeus-hotel-integration/v2/apierr"
 	"github.com/techpartners-asia/amadeus-hotel-integration/v2/internal/amadeus"
 	"github.com/techpartners-asia/amadeus-hotel-integration/v2/internal/amadeus/dto/offersdto"
+	"github.com/techpartners-asia/amadeus-hotel-integration/v2/money"
 )
 
 // basePath is the Hotel Search (v3.5) endpoint root.
@@ -38,6 +39,43 @@ type OfferDetail struct {
 	Available bool
 	// Offer is the bookable rate.
 	Offer Offer
+
+	// Rates are the currency conversions this response returned, present when
+	// the search that produced the offer asked for a currency the hotel does
+	// not quote in.
+	//
+	// The by-ID endpoint takes no currency parameter, yet Amadeus attaches the
+	// rate regardless: the conversion context follows the offer ID. Keeping it
+	// here is what lets the re-verify step show the same currency the search
+	// showed, which matters because this is the call made immediately before
+	// booking - the last point at which the price on the screen is settled.
+	Rates ConversionRates
+}
+
+// Display converts an amount from this offer into the currency the original
+// search asked for, ready to show to a user.
+//
+// It behaves exactly as HotelOffers.Display: the offer's own price is never
+// mutated, since that is the currency the booking is charged in, and an amount
+// no rate covers is returned unchanged with Converted false.
+func (d OfferDetail) Display(amount money.Money) DisplayMoney {
+	converted, ok := d.Rates.ConvertOrOriginal(amount)
+	return DisplayMoney{
+		Amount:    converted,
+		Original:  amount,
+		Converted: ok,
+	}
+}
+
+// DisplayTotal is the amount to show the guest for this offer, converted into
+// the requested currency.
+//
+// It takes no argument where HotelOffers.DisplayTotal takes an offer, because
+// an OfferDetail already holds the single offer it describes. Like that method
+// it displays Price.Payable() rather than Total, so an agency markup is
+// included when one applies.
+func (d OfferDetail) DisplayTotal() DisplayMoney {
+	return d.Display(d.Offer.Price.Payable())
 }
 
 type service struct {
@@ -94,5 +132,6 @@ func (s *service) Get(ctx context.Context, query GetQuery) (*OfferDetail, error)
 		Hotel:     mapped[0].Hotel,
 		Available: mapped[0].Available,
 		Offer:     mapped[0].Offers[0],
+		Rates:     mapped[0].Rates,
 	}, nil
 }
