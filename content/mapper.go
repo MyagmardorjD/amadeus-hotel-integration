@@ -466,12 +466,15 @@ func mapFacilities(f contentdto.FacilityResponse) *Facilities {
 	facilities := &Facilities{Amenities: mapAmenities(f.Amenities)}
 
 	if info := f.MeetingRoomInfo; info.Quantity > 0 || len(info.MeetingRooms) > 0 {
-		facilities.MeetingRooms = &MeetingRooms{
-			Count:           info.Quantity,
+		rooms := &MeetingRooms{
+			// len() when Amadeus states no quantity, which is the common case: it
+			// publishes the rooms themselves and leaves the counter at zero, and a
+			// property with one named meeting room used to report having none.
+			Count:           max(info.Quantity, len(info.MeetingRooms)),
 			LargestCapacity: info.LargestRoomSeatOccupancy,
 		}
 		if area := info.LargestRoomSpace; area.Area != 0 {
-			facilities.MeetingRooms.TotalArea = &media.Dimensions{
+			rooms.TotalArea = &media.Dimensions{
 				Area:          area.Area,
 				AreaUnit:      string(area.AreaUnit),
 				Width:         area.Width,
@@ -482,26 +485,32 @@ func mapFacilities(f contentdto.FacilityResponse) *Facilities {
 			}
 		}
 		for _, room := range info.MeetingRooms {
+			rooms.Rooms = append(rooms.Rooms, mapMeetingRoom(room))
+		}
+		for _, room := range rooms.Rooms {
 			if room.Description != "" {
-				facilities.MeetingRooms.Description = room.Description
+				rooms.Description = room.Description
 				break
 			}
 		}
+		facilities.MeetingRooms = rooms
 	}
 
 	if info := f.RestaurantInfo; info.Quantity > 0 || len(info.Restaurants) > 0 {
-		restaurants := &Restaurants{Count: info.Quantity}
+		restaurants := &Restaurants{Count: max(info.Quantity, len(info.Restaurants))}
 		seen := make(map[string]bool)
 		for _, restaurant := range info.Restaurants {
-			for _, cuisine := range restaurant.CuisineTypes {
-				if cuisine != "" && !seen[cuisine] {
+			venue := mapRestaurant(restaurant)
+			for _, cuisine := range venue.Cuisines {
+				if !seen[cuisine] {
 					seen[cuisine] = true
 					restaurants.Cuisines = append(restaurants.Cuisines, cuisine)
 				}
 			}
 			if restaurants.Description == "" {
-				restaurants.Description = restaurant.Description
+				restaurants.Description = venue.Description
 			}
+			restaurants.Venues = append(restaurants.Venues, venue)
 		}
 		facilities.Restaurants = restaurants
 	}
@@ -511,6 +520,82 @@ func mapFacilities(f contentdto.FacilityResponse) *Facilities {
 		return nil
 	}
 	return facilities
+}
+
+// mapMeetingRoom translates one named event space.
+func mapMeetingRoom(wire contentdto.MeetingRoomResponse) MeetingRoom {
+	photos, prose := splitMedia(wire.Media)
+	room := MeetingRoom{
+		Name:        wire.Name,
+		Type:        string(wire.MeetingRoomType),
+		Description: venueDescription(wire.Description, prose),
+		Dimensions:  roomDimensions(wire.RoomDimensions),
+		Media:       photos,
+		SortOrder:   wire.SortOrder,
+	}
+	for _, layout := range wire.OccupancyPerLayouts {
+		room.Capacities = append(room.Capacities, LayoutCapacity{
+			Layout:       string(layout.Layout),
+			MaxOccupancy: layout.MaxOccupancy,
+		})
+	}
+	return room
+}
+
+// mapRestaurant translates one named dining venue.
+func mapRestaurant(wire contentdto.RestaurantResponse) Restaurant {
+	photos, prose := splitMedia(wire.Media)
+	venue := Restaurant{
+		Name:            wire.Name,
+		Category:        string(wire.Category),
+		Description:     venueDescription(wire.Description, prose),
+		MaxSeating:      int(wire.MaxSeatingCapacity),
+		ServesBreakfast: wire.HasBreakfast,
+		ServesBrunch:    wire.HasBrunch,
+		ServesLunch:     wire.HasLunch,
+		ServesDinner:    wire.HasDinner,
+		Media:           photos,
+	}
+	for _, cuisine := range wire.CuisineTypes {
+		if cuisine != "" {
+			venue.Cuisines = append(venue.Cuisines, cuisine)
+		}
+	}
+	return venue
+}
+
+// venueDescription is the prose for a venue.
+//
+// Amadeus files it in one of two places and, on the properties measured, only
+// ever uses the second: the venue's own `description` is empty and the text sits
+// in a prose entry of its media array, alongside the photographs. Reading the
+// field alone therefore returned nothing for a venue that plainly had prose.
+func venueDescription(stated string, prose []media.Text) string {
+	if stated != "" {
+		return stated
+	}
+	for _, text := range prose {
+		if text.Value != "" {
+			return text.Value
+		}
+	}
+	return ""
+}
+
+// roomDimensions translates a room's measurements, nil when it has none.
+func roomDimensions(wire contentdto.RoomDimensionsResponse) *media.Dimensions {
+	if wire.Area == 0 && wire.Width == 0 && wire.Height == 0 && wire.Length == 0 {
+		return nil
+	}
+	return &media.Dimensions{
+		Area:          wire.Area,
+		AreaUnit:      string(wire.AreaUnit),
+		Width:         wire.Width,
+		Height:        wire.Height,
+		Length:        wire.Length,
+		Unit:          string(wire.Unit),
+		DecimalPlaces: wire.DecimalPlaces,
+	}
 }
 
 func mapPolicies(p contentdto.PolicyResponse) *Policies {

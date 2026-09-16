@@ -457,22 +457,86 @@ type Facilities struct {
 
 // MeetingRooms describes a property's event space.
 type MeetingRooms struct {
-	// Count is how many meeting rooms there are.
+	// Count is how many meeting rooms there are. Amadeus routinely states the
+	// rooms without stating a count, so this falls back to len(Rooms).
 	Count int
 	// LargestCapacity is the biggest room's capacity.
 	LargestCapacity int
 	// TotalArea is the combined area, with its unit.
 	TotalArea *media.Dimensions
-	// Description is prose about the space.
+	// Description is prose about the space, taken from the first room that has
+	// any when Amadeus gives no summary of its own.
 	Description string
+	// Rooms are the individual spaces, in the order Amadeus published them.
+	//
+	// This is where the names and the photographs live. The fields above say how
+	// much space there is; these say what it is called and what it looks like,
+	// and a property page has nothing to show without them.
+	Rooms []MeetingRoom
+}
+
+// MeetingRoom is one named event space.
+type MeetingRoom struct {
+	// Name is what the property calls it, e.g. "SORBONNE".
+	Name string
+	// Type is its layout classification, e.g. "BOARDROOM".
+	Type string
+	// Description is prose about this room. Amadeus files it either on the room
+	// or inside its media, and both end up here.
+	Description string
+	// Capacities are the maximum occupancies per seating layout.
+	Capacities []LayoutCapacity
+	// Dimensions are the room's own measurements.
+	Dimensions *media.Dimensions
+	// Media are photographs of the room.
+	Media []media.Asset
+	// SortOrder is the position Amadeus wants it displayed in, zero when it
+	// stated none.
+	SortOrder int
+}
+
+// LayoutCapacity is how many people one seating layout holds.
+type LayoutCapacity struct {
+	// Layout is the arrangement, e.g. "U_SHAPE".
+	Layout string
+	// MaxOccupancy is how many it seats that way.
+	MaxOccupancy int
 }
 
 // Restaurants describes a property's dining.
 type Restaurants struct {
-	// Count is how many restaurants there are.
+	// Count is how many restaurants there are. Amadeus routinely states the
+	// venues without stating a count, so this falls back to len(Venues).
 	Count int
-	// Cuisines are the cuisine types served.
+	// Cuisines are the cuisine types served, across every venue.
 	Cuisines []string
-	// Description is prose about the dining.
+	// Description is prose about the dining, taken from the first venue that has
+	// any when Amadeus gives no summary of its own.
 	Description string
+	// Venues are the individual restaurants and bars, in the order Amadeus
+	// published them. This is where the names and the photographs live.
+	Venues []Restaurant
+}
+
+// Restaurant is one named dining venue.
+type Restaurant struct {
+	// Name is what the property calls it, e.g. "BAR".
+	Name string
+	// Category is the service category, e.g. "BAR_OR_LOUNGE".
+	Category string
+	// Description is prose about this venue. Amadeus files it either on the
+	// venue or inside its media, and both end up here.
+	Description string
+	// Cuisines are the cuisine types this venue serves.
+	Cuisines []string
+	// MaxSeating is how many it seats, zero when Amadeus stated none.
+	MaxSeating int
+	// ServesBreakfast, ServesBrunch, ServesLunch and ServesDinner are the meals
+	// it serves.
+	ServesBreakfast bool
+	ServesBrunch    bool
+	ServesLunch     bool
+	ServesDinner    bool
+	// Media are photographs of the venue.
+	Media []media.Asset
 }
