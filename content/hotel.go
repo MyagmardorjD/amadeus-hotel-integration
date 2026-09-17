@@ -291,11 +291,21 @@ type Building struct {
 	Floors int
 	// TotalRooms is how many rooms the property has.
 	TotalRooms int
+	// ExecutiveFloors, Buildings and Elevators are the rest of what Amadeus
+	// counts about the structure. All three were decoded and then dropped.
+	ExecutiveFloors int
+	Buildings       int
+	Elevators       int
 	// YearBuilt and YearRenovated are the construction and last-renovation
 	// years, as Amadeus published them.
 	YearBuilt     string
 	YearRenovated string
-	// Description is prose about the building.
+	// Architecture is the style Amadeus files the building under, e.g.
+	// "MODERN". It used to be returned as Description, which is a different
+	// thing: a client rendering prose got a code word.
+	Architecture string
+	// Description is prose about the building. Amadeus publishes none in this
+	// block today, so it is reserved rather than filled from something else.
 	Description string
 }
 
@@ -443,6 +453,24 @@ type PointOfInterest struct {
 	Season *Period
 	// Media are photographs of it.
 	Media []media.Asset
+	// Transportations are how to reach it - the modes Amadeus lists with the
+	// journey time for each. Decoded and then dropped until now, which left a
+	// point of interest with a distance and no way of getting there.
+	Transportations []Transportation
+}
+
+// Transportation is one way of reaching a place.
+type Transportation struct {
+	// Mode is the means, e.g. "TAXI", "SUBWAY", "WALKING".
+	Mode string
+	// Description explains the journey.
+	Description string
+	// Hours is when the service runs, and ReservationRequired whether it has to
+	// be booked ahead.
+	Hours               *Schedule
+	ReservationRequired bool
+	// Media are photographs of it.
+	Media []media.Asset
 }
 
 // Facilities are the shared amenities and venues on the property.
@@ -539,4 +567,29 @@ type Restaurant struct {
 	ServesDinner    bool
 	// Media are photographs of the venue.
 	Media []media.Asset
+	// Hours is when the venue is open. A restaurant nobody can tell the opening
+	// times of is half a listing.
+	Hours *Schedule
+	// ReservationRequired reports whether a guest has to book a table.
+	ReservationRequired bool
+}
+
+// Schedule is when something is open: the days of the week, the hours on those
+// days, and the dates the schedule itself is in force.
+type Schedule struct {
+	// Days are the weekdays it applies to, e.g. "MON", "SAT".
+	Days []string
+	// StartTime and EndTime are the opening hours, as Amadeus published them.
+	StartTime string
+	EndTime   string
+	// StartDate and EndDate bound a seasonal schedule; empty when it is
+	// year-round.
+	StartDate string
+	EndDate   string
+}
+
+// IsEmpty reports whether a schedule says nothing at all.
+func (s Schedule) IsEmpty() bool {
+	return len(s.Days) == 0 && s.StartTime == "" && s.EndTime == "" &&
+		s.StartDate == "" && s.EndDate == ""
 }

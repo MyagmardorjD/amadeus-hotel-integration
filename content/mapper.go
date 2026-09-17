@@ -306,11 +306,16 @@ func mapBuilding(b contentdto.BuildingResponse) *Building {
 		return nil
 	}
 	return &Building{
-		Floors:        b.NumberOfFloors,
-		TotalRooms:    b.NumberOfRooms,
-		YearBuilt:     b.BuiltDate,
-		YearRenovated: b.RenovationDate,
-		Description:   string(b.ArchitectureCode),
+		Floors:          b.NumberOfFloors,
+		TotalRooms:      b.NumberOfRooms,
+		ExecutiveFloors: b.NumberOfExecutiveFloors,
+		Buildings:       b.NumberOfBuildings,
+		Elevators:       b.NumberOfElevators,
+		YearBuilt:       b.BuiltDate,
+		YearRenovated:   b.RenovationDate,
+		// The architecture code is a code word, not prose. It used to be returned
+		// as Description, so a client rendering a paragraph got "MODERN".
+		Architecture: string(b.ArchitectureCode),
 	}
 }
 
@@ -408,6 +413,27 @@ func mapPromotions(wire []contentdto.PromotionResponse) []Promotion {
 	return out
 }
 
+// mapSchedule translates an opening schedule, nil when Amadeus stated none.
+// The weekday list is flattened: the wire wraps each day in an object of its
+// own, which is noise once it reaches a caller.
+func mapSchedule(wire contentdto.CalendarScheduleResponse) *Schedule {
+	out := Schedule{
+		StartTime: wire.StartTime,
+		EndTime:   wire.EndTime,
+		StartDate: wire.StartDate,
+		EndDate:   wire.EndDate,
+	}
+	for _, d := range wire.ByDays {
+		if d.Day != "" {
+			out.Days = append(out.Days, d.Day)
+		}
+	}
+	if out.IsEmpty() {
+		return nil
+	}
+	return &out
+}
+
 func mapPointOfInterest(p contentdto.PointOfInterestResponse) PointOfInterest {
 	poi := PointOfInterest{
 		Name:         p.Basic.Name,
@@ -427,6 +453,16 @@ func mapPointOfInterest(p contentdto.PointOfInterestResponse) PointOfInterest {
 	if p.Season.Start != nil || p.Season.End != nil {
 		season := mapPeriod(p.Season)
 		poi.Season = &season
+	}
+
+	for _, t := range p.Transportations {
+		poi.Transportations = append(poi.Transportations, Transportation{
+			Mode:                string(t.TransportMode),
+			Description:         t.Description,
+			ReservationRequired: t.IsReservationRequired,
+			Hours:               mapSchedule(t.OperatingHours),
+			Media:               mapping.MediaAssets(t.Media),
+		})
 	}
 	if distance := nearestDistance(p.LocationDistance); distance != nil {
 		poi.Distance = distance
@@ -546,15 +582,17 @@ func mapMeetingRoom(wire contentdto.MeetingRoomResponse) MeetingRoom {
 func mapRestaurant(wire contentdto.RestaurantResponse) Restaurant {
 	photos, prose := splitMedia(wire.Media)
 	venue := Restaurant{
-		Name:            wire.Name,
-		Category:        string(wire.Category),
-		Description:     venueDescription(wire.Description, prose),
-		MaxSeating:      int(wire.MaxSeatingCapacity),
-		ServesBreakfast: wire.HasBreakfast,
-		ServesBrunch:    wire.HasBrunch,
-		ServesLunch:     wire.HasLunch,
-		ServesDinner:    wire.HasDinner,
-		Media:           photos,
+		Name:                wire.Name,
+		Category:            string(wire.Category),
+		Description:         venueDescription(wire.Description, prose),
+		MaxSeating:          int(wire.MaxSeatingCapacity),
+		ServesBreakfast:     wire.HasBreakfast,
+		ServesBrunch:        wire.HasBrunch,
+		ServesLunch:         wire.HasLunch,
+		ServesDinner:        wire.HasDinner,
+		ReservationRequired: wire.IsReservationRequired,
+		Hours:               mapSchedule(wire.OperatingHours),
+		Media:               photos,
 	}
 	for _, cuisine := range wire.CuisineTypes {
 		if cuisine != "" {
